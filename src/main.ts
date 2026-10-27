@@ -623,6 +623,32 @@ function shareLatest() {
   latest.forEach((r) => shareReading(r));
 }
 
+// ---------- updates ----------
+
+/** What the updater (src-tauri/src/update.rs) last reported. */
+interface UpdateStatus {
+  current: string;
+  state: "off" | "checking" | "current" | "downloading" | "ready" | "installing" | "failed";
+  next?: string;
+  error?: string;
+}
+let update: UpdateStatus | null = null;
+
+function updateLine(): string {
+  if (!inTauri) return "Updates need the desktop app.";
+  if (!update) return "";
+  const v = `Version ${update.current}`;
+  switch (update.state) {
+    case "off": return `${v} · local build, doesn't update itself`;
+    case "checking": return `${v} · checking for updates…`;
+    case "current": return `${v} · up to date`;
+    case "downloading": return `${v} · downloading ${update.next}…`;
+    case "ready": return `${v} · ${update.next} installs when Rocket League closes`;
+    case "installing": return `Installing ${update.next}…`;
+    case "failed": return `${v} · update failed: ${update.error}`;
+  }
+}
+
 // ---------- replays ----------
 
 /**
@@ -979,6 +1005,9 @@ function renderEditor() {
   $<HTMLInputElement>("hud-visible").checked = settings.hudVisible;
   $("share-status").textContent = shareError;
   $("share-status").hidden = !shareError;
+  $("update-status").textContent = updateLine();
+  $("update-check").hidden = !update || update.state === "off" || update.state === "installing";
+  $<HTMLButtonElement>("update-check").disabled = update?.state === "checking" || update?.state === "downloading";
   const linked = archive.filter((r) => r.replay).length;
   $("replay-status").textContent = !inTauri
     ? "Replays need the desktop app."
@@ -1136,6 +1165,11 @@ if (inTauri) {
   await listen<MmrReading>("own-mmr", (e) => onOwnMmr(e.payload));
   // Readings the app found before this window was listening (it can open after the game).
   onOwnMmr(...((await invoke<MmrReading[]>("mmr_readings")) ?? []));
+  await listen<UpdateStatus>("update-status", (e) => {
+    update = e.payload;
+    renderEditor();
+  });
+  update = (await invoke<UpdateStatus>("update_status")) ?? null;
   // Reopening the game starts a new session.
   await listen<number>("game-run", (e) => {
     gameRunStart = e.payload;
@@ -1343,6 +1377,8 @@ $("share-forget").addEventListener("click", async () => {
   shareError = (await sharedMmr.forget(settings.shareToken, me.primaryId)) ?? "Your shared MMR was deleted.";
   renderEditor();
 });
+
+$("update-check").addEventListener("click", () => invoke("check_update"));
 
 const unitInput = $<HTMLSelectElement>("speed-unit");
 unitInput.value = settings.speedUnit;
