@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RL Overlay</title>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <aside id="hud" hidden></aside>
+    <main id="report" hidden></main>
+
+    <!-- Boost meter calibration: a box you move over the boost number. -->
+    <div id="boost-box" hidden><span id="boost-box-handle"></span></div>
+    <div id="calib-bar" hidden>
+      <div>
+        <b>Mark the boost number</b>
+        <p>Drag the box over the number in the middle of your boost meter, then resize it from the corner so it just fits the digits. Have a match or free play running so the meter is on screen.</p>
+        <p class="reading">Reading: <span id="calib-reading"></span></p>
+      </div>
+      <div class="actions">
+        <button id="calib-relearn" title="Forget learned digit shapes, e.g. after changing resolution or HUD scale">Relearn digits</button>
+        <button id="calib-cancel">Cancel</button>
+        <button id="calib-done" class="primary">Save</button>
+      </div>
+    </div>
+
+    <!-- First run: turn on the Stats API and set your name. -->
+    <div id="setup" hidden>
+      <h1>Set up RL Overlay</h1>
+      <section>
+        <h2>Rocket League Stats API</h2>
+        <div class="installs"></div>
+      </section>
+      <label>
+        Your in-game name
+        <input id="setup-name" spellcheck="false" />
+      </label>
+      <div class="actions">
+        <button id="setup-done" class="primary">Done</button>
+      </div>
+    </div>
+
+    <div id="editor" hidden>
+      <header>
+        <h1>RL Overlay</h1>
+        <p id="status" hidden></p>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab on" data-tab="general">General</button>
+        <button class="tab" data-tab="hud">HUD</button>
+        <button class="tab" data-tab="report">Match report</button>
+        <button class="tab" data-tab="boost">Boost and replays</button>
+      </nav>
+
+      <section class="pane" data-pane="general">
+        <div class="installs"></div>
+        <label class="check"><input type="checkbox" id="auto-start" />Open and close with Rocket League</label>
+        <label>
+          Your in-game name
+          <input id="player-name" placeholder="Leave empty to follow the camera" spellcheck="false" />
+        </label>
+        <div class="row">
+          <label>
+            Match report hotkey
+            <input id="report-hotkey" placeholder="Alt+Shift+S" spellcheck="false" />
+          </label>
+          <label>
+            HUD hotkey
+            <input id="hud-hotkey" placeholder="Alt+Shift+D" spellcheck="false" />
+          </label>
+        </div>
+        <span id="hotkey-error" class="error"></span>
+        <label>
+          Hide the post-match report after (seconds, 0 = until the next match)
+          <input id="auto-hide" inputmode="numeric" />
+        </label>
+        <label>
+          Speed unit
+          <select id="speed-unit">
+            <option value="kmh">km/h</option>
+            <option value="mph">mph</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="share-mmr" />Share my MMR with other overlay users</label>
+        <label>
+          Shared MMR server
+          <input id="server-url" spellcheck="false" />
+        </label>
+        <p id="share-status" class="error" hidden></p>
+        <button id="share-forget" class="link">Delete my shared MMR</button>
+        <label>
+          Stats API WebSocket port
+          <input id="port" inputmode="numeric" />
+        </label>
+      </section>
+
+      <section class="pane" data-pane="hud" hidden>
+        <label class="check"><input type="checkbox" id="hud-visible" />Show the HUD</label>
+        <label>
+          Size <span id="hud-scale-value"></span>
+          <input type="range" id="hud-scale" min="70" max="180" step="10" />
+        </label>
+        <div id="hud-stats"></div>
+        <button id="hud-reset-pos" class="link">Reset HUD position</button>
+      </section>
+
+      <section class="pane" data-pane="report" hidden>
+        <div class="columns">
+          <div>
+            <h2>Tabs</h2>
+            <ol id="report-sections" class="order-list"></ol>
+          </div>
+          <div>
+            <h2>Player table columns</h2>
+            <div id="report-columns"></div>
+            <label>
+              Seconds of play before a goal when watching it
+              <input id="replay-lead" inputmode="numeric" />
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="pane" data-pane="boost" hidden>
+        <h2>Boost meter (live, from the screen)</h2>
+        <p id="boost-status" class="muted"></p>
+        <div class="actions">
+          <button id="boost-mark">Mark boost meter</button>
+          <button id="boost-clear">Turn off</button>
+        </div>
+        <label class="check"><input type="checkbox" id="boost-logging" />Log readings to boost-log.csv (for checking accuracy)</label>
+
+        <h2>Replays (exact, after the match)</h2>
+        <p id="replay-status" class="muted"></p>
+        <label class="check"><input type="checkbox" id="auto-save-replays" />Save each match's replay automatically (holds your Save Replay key during the first kickoff countdown)</label>
+      </section>
+
+      <div class="actions">
+        <button id="preview-report">Show report</button>
+        <button id="reset-session">Reset session</button>
+        <button id="quit">Quit</button>
+        <button id="done" class="primary">Done</button>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,3 @@
+# rustc crashes under all-core load on this machine (likely CPU instability); see README.
+[build]
+jobs = 6

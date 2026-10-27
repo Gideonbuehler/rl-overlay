@@ -1,0 +1,9 @@
+# Shared MMR for RL Overlay users. See README.md.
+name = "rl-overlay"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rl-overlay-db"
+database_id = "85bb5af2-daf0-4a00-930c-ff6731f29aa4"

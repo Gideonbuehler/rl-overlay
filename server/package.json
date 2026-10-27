@@ -1,0 +1,16 @@
+{
+  "name": "rl-overlay-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local --port 8787",
+    "migrate:local": "wrangler d1 migrations apply rl-overlay-db --local",
+    "migrate:remote": "wrangler d1 migrations apply rl-overlay-db --remote",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261013.1",
+    "typescript": "~5.8.3",
+    "wrangler": "4.150.0"
+  }
+}
