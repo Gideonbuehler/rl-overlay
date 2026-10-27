@@ -1,0 +1,66 @@
+# Every push to main becomes a release the installed app updates itself to
+# (see src-tauri/src/update.rs). The version is the one in tauri.conf.json with
+# the run number as its patch: 0.1.0 there gives 0.1.1, 0.1.2, ...
+#
+# Needs two repository secrets, the update signing key and its password:
+# TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One release at a time, in push order.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+      - run: npm test
+
+      - name: Set the version and turn on signed update files
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = "src-tauri/tauri.conf.json";
+            const conf = JSON.parse(fs.readFileSync(path, "utf8"));
+            const [major, minor] = conf.version.split(".");
+            conf.version = `${major}.${minor}.${process.env.GITHUB_RUN_NUMBER}`;
+            conf.bundle.createUpdaterArtifacts = true;
+            fs.writeFileSync(path, JSON.stringify(conf, null, 2));
+            console.log(`Version ${conf.version}`);
+          '
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Builds made here update themselves; local builds don't.
+          RL_OVERLAY_UPDATES: "1"
+        with:
+          tagName: v__VERSION__
+          releaseName: RL Overlay v__VERSION__
+          releaseBody: ${{ github.event.head_commit.message }}
+          releaseDraft: false
+          prerelease: false
