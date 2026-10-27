@@ -17,7 +17,8 @@ so Windows asks first. The same status is in settings > General. Manually:
    (or `TAStatsAPI.ini` if that exists), set `PacketSendRate` above 0. 30 is plenty.
    Restart the game after editing.
 2. Run Rocket League in **borderless windowed**. Nothing can draw over exclusive fullscreen.
-3. `npm install`, then `npm run tauri dev`.
+3. Install the latest release from the repo's GitHub Releases page (it keeps itself up
+   to date; see [Updates](#updates)), or `npm install`, then `npm run tauri dev`.
 
 ## Using it
 
@@ -145,7 +146,10 @@ to its log (`Documents\My Games\Rocket League\TAGame\Logs\Launch.log`). The over
 reads it (MMR = value × 20 + 100; matches RL Tracker within a game or two) when you
 queue solo or lead the party (member 0, whoever made it; your id comes from the sign-in
 line); in someone else's party the value is theirs, so it's skipped. The game's backup
-logs are read at startup too, so earlier games today are filled in.
+logs are read at startup too, so earlier games today are filled in. The log's queue
+times can be UTC or your PC's local time; the overlay tells which from the first queue
+it sees as the game writes it (until then it assumes UTC), and lines readings up with
+your matches on that clock.
 
 Because it's logged as you queue, each reading is your MMR going into a match, and a
 match's change is known once you queue again. If you play two matches without queuing in
@@ -153,7 +157,8 @@ between (staying in the lobby), neither gets a change rather than one getting bo
 overlay shows MMR next to your name in the report, the change per match there and in All
 matches, the session's change per playlist in the report's top bar (first queue of the
 session to the latest), and HUD stats for MMR, Last game MMR, and Session MMR. The last
-match of a session has no change until your next queue.
+match of a session has no change until your next queue; the report shows "MMR going in"
+until then. Last game MMR skips matches with no MMR (private matches, training).
 
 Saved matches need some play seen (a clock, a touch, or a goal). The end screen keeps
 sending state with a winner after a match, which used to be saved as an extra "match"
@@ -175,6 +180,27 @@ crash or update), when you begin a match more than 2 hours after your last, or b
 Reset session. Game launches are watched for as long as the app runs and saved to
 `game-run.json`, so restarting the overlay doesn't count as reopening the game. The last
 100 matches are kept.
+
+## Updates
+
+Installed releases update themselves. Every push to `main` runs the Release workflow
+(`.github/workflows/release.yml`), which tests, builds, and signs the installer and
+publishes it as a GitHub release, versioned from `tauri.conf.json` with the run number
+as the patch (0.1.1, 0.1.2, ...). The app looks for a newer release at startup and every
+three hours, downloads it in the background, and installs it once Rocket League isn't
+running, so a match is never cut short. It then restarts the way it was started (a
+sign-in start goes back to waiting in the tray). Settings > General shows the version
+and update status, with **Check for updates** to look now.
+
+Only the workflow's builds update themselves; a build from `npm run tauri build` or
+`tauri dev` doesn't, so it isn't replaced by the latest release. A build from before
+updates existed needs the first release installed by hand.
+
+Updates are signed, and the app only installs one signed with the key whose public half
+is in `tauri.conf.json`. The workflow needs the private key and its password as
+repository secrets, `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+The app downloads releases without signing in to GitHub, so the repo has to be public.
+Other branches run the Check workflow (tests and a Windows build) instead.
 
 ## Saved data
 
@@ -249,7 +275,8 @@ The overlay is a plain web page, so it also works as an OBS browser source:
 
 ## Building
 
-`npm run tauri build` makes an installer in `src-tauri/target/release/bundle/nsis`.
+`npm run tauri build` makes an installer in `src-tauri/target/release/bundle/nsis`
+(one that doesn't update itself; releases come from the Release workflow).
 `.cargo/config.toml` caps cargo at 6 jobs: on this machine, rustc crashes with
 random access violations under all-core load, most likely CPU instability (an i9-13900K
 on an old BIOS) rather than a bug in the code.
@@ -288,6 +315,8 @@ src-tauri/src/gamerun.rs  game launches (5-minute grace), for sessions
 src-tauri/src/focus.rs    click zones (Ctrl), foreground tracking, focus hand-back
 src-tauri/src/replays.rs  finds saved replays, reads goal frames, exact boost via subtr-actor
 src-tauri/src/setup.rs    first-run setup: finds the game, turns the Stats API on
+src-tauri/src/update.rs   installs new releases from GitHub, once the game is closed
+.github/workflows/  Release (every push to main) and Check (other branches)
 mock/server.mjs   fake Stats API feed, no dependencies
 server/           shared MMR service (Cloudflare Worker + D1)
 ```

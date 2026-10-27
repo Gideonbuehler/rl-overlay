@@ -6,6 +6,7 @@ mod mmr;
 mod replays;
 mod setup;
 mod store;
+mod update;
 
 pub use boost::ocr_test;
 pub use replays::replay_test;
@@ -221,6 +222,7 @@ pub fn run() {
         // A second launch (by hand while the sign-in copy waits) opens the
         // overlay in this one instead of starting another overlay.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| open_overlay(app)))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -244,6 +246,7 @@ pub fn run() {
             replays::watch(app.handle().clone());
             mmr::watch(app.handle().clone());
             gamerun::watch(app.handle().clone());
+            update::watch(app.handle().clone());
 
             // Started at sign-in (--auto), wait in the tray for the game.
             // Started by hand, open straight away.
@@ -302,6 +305,8 @@ pub fn run() {
             autorun::set_auto_start,
             store::store_load,
             store::store_save,
+            update::update_status,
+            update::check_update,
             quit
         ])
         .build(tauri::generate_context!())
