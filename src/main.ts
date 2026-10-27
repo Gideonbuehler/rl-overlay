@@ -5,7 +5,7 @@ import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, renderHud } from "./hud";
 import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type PlayerBoost } from "./match";
 import { trackerCandidates } from "./names";
 import { setSpeedUnit, type SpeedUnit } from "./units";
-import { DEFAULT_SERVER_URL, SharedMmr, latestReading, matchMmr, newShareToken, readingTime, type MmrReading } from "./mmr";
+import { DEFAULT_SERVER_URL, SharedMmr, latestReading, logIsLocal, matchMmr, newShareToken, readingTime, utcAt, type MmrReading } from "./mmr";
 import { COLUMNS, TABS, ZONES_COLUMN, overrideKey, renderReport, type ReportEntry, type ReportView } from "./report";
 import {
   ARCHIVE_LIMIT,
@@ -610,7 +610,9 @@ const mmrFor = (r: MatchRecord) => matchMmr(readings, r, archive);
 async function shareReading(r: MmrReading) {
   const me = myIdentity();
   if (!settings.shareMmr || !me) return;
-  shareError = (await sharedMmr.report(settings.shareToken, me.primaryId, me.name, r)) ?? "";
+  // The service takes UTC; the log may be on local time.
+  const at = utcAt(readingTime(r, logIsLocal(readings)));
+  shareError = (await sharedMmr.report(settings.shareToken, me.primaryId, me.name, { ...r, at })) ?? "";
   renderEditor();
 }
 
@@ -928,9 +930,10 @@ function renderHudPanel() {
   placeHud();
 }
 
-/** The MMR change from your last finished match, when it's known. */
+/** The MMR change from your last finished match with an MMR (not private or training), when it's known. */
 function lastGameMmr(): number | null {
-  const last = archive.find((r) => r.myTeam !== null);
+  const rated = new Set(readings.map((x) => x.playlist));
+  const last = archive.find((r) => r.myTeam !== null && r.playlistId !== undefined && rated.has(r.playlistId));
   if (!last) return null;
   const { before, after } = mmrFor(last);
   return before !== undefined && after !== undefined ? after - before : null;
