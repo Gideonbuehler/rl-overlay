@@ -3,11 +3,14 @@
 
 import type { MatchRecord } from "./match";
 
-/** One solo queue as the game logged it: playlist, MMR, and UTC time. */
+/** One solo queue as the game logged it: playlist, MMR, and the log's time. */
 export interface MmrReading {
   playlist: number;
   mmr: number;
+  /** "2026-10-24 13:23:52", on the log's clock (see logIsLocal). */
   at: string;
+  /** When the overlay read it (ms), if it read it as the game wrote it. */
+  seen?: number;
 }
 
 /** A player as the shared service returns them. */
@@ -17,8 +20,34 @@ export interface SharedPlayer {
   playlists: Record<string, { mmr: number; at: number }>;
 }
 
-/** The log writes "2026-10-24 13:23:52" in UTC. */
-export const readingTime = (r: MmrReading) => Date.parse(`${r.at.replace(" ", "T")}Z`);
+/** A reading's time, reading the log's "2026-10-24 13:23:52" as UTC or as this PC's local time. */
+export function readingTime(r: MmrReading, local = false): number {
+  if (!local) return Date.parse(`${r.at.replace(" ", "T")}Z`);
+  const [y, mo, d, h, mi, s] = r.at.split(/[- :]/).map(Number);
+  return new Date(y, mo - 1, d, h, mi, s).getTime();
+}
+
+/** How close a reading caught as it was logged must be to a clock to say which one the log uses. */
+const CLOCK_SLACK = 15 * 60_000;
+
+/**
+ * Whether the log's times are this PC's local time rather than UTC. The newest
+ * reading the overlay caught as the game wrote it settles it: its time is
+ * right now on whichever clock the log uses. Until there's one, UTC.
+ */
+export function logIsLocal(readings: MmrReading[]): boolean {
+  for (let i = readings.length - 1; i >= 0; i--) {
+    const { seen } = readings[i];
+    if (seen === undefined) continue;
+    const utc = Math.abs(readingTime(readings[i]) - seen);
+    const local = Math.abs(readingTime(readings[i], true) - seen);
+    if (Math.min(utc, local) < CLOCK_SLACK) return local < utc;
+  }
+  return false;
+}
+
+/** A time as "2026-10-24 13:23:52" in UTC, the shared service's format. */
+export const utcAt = (ms: number) => new Date(ms).toISOString().slice(0, 19).replace("T", " ");
 
 /** Your latest reading, for one playlist or any. */
 export function latestReading(readings: MmrReading[], playlist?: number): MmrReading | undefined {
@@ -31,15 +60,16 @@ export function latestReading(readings: MmrReading[], playlist?: number): MmrRea
 /**
  * Your MMR going into a match and coming out of it. The game logs it as you
  * queue, so "before" is the queue for this match and "after" the queue for
- * your next one. Either is left out when another match in the same playlist
+ * your next one: the first after this match started, since you can't queue
+ * while you play. Either is left out when another match in the same playlist
  * came in between (you stayed in the lobby, or a queue went unseen), because
  * the difference would then cover more than this match. `matches` is the rest
  * of your history, to check that against.
  */
 export function matchMmr(readings: MmrReading[], r: MatchRecord, matches: MatchRecord[] = []): { before?: number; after?: number } {
   if (r.playlistId === undefined) return {};
+  const local = logIsLocal(readings);
   const start = r.startedAt;
-  const end = r.endedAt ?? start;
   let prevStart = -Infinity;
   let nextStart = Infinity;
   for (const m of matches) {
@@ -48,16 +78,18 @@ export function matchMmr(readings: MmrReading[], r: MatchRecord, matches: MatchR
     else nextStart = Math.min(nextStart, m.startedAt);
   }
   const same = readings.filter((x) => x.playlist === r.playlistId);
-  const before = [...same].reverse().find((x) => readingTime(x) <= start && readingTime(x) > prevStart);
-  const after = same.find((x) => readingTime(x) >= end && readingTime(x) < nextStart);
+  const at = (x: MmrReading) => readingTime(x, local);
+  const before = [...same].reverse().find((x) => at(x) <= start && at(x) > prevStart);
+  const after = same.find((x) => at(x) > start && at(x) < nextStart);
   return { before: before?.mmr, after: after?.mmr };
 }
 
 /** MMR at the first and latest queue since `since`, per playlist, in first-played order. */
 export function mmrSince(readings: MmrReading[], since: number): { playlist: number; from: number; to: number }[] {
+  const local = logIsLocal(readings);
   const by = new Map<number, { playlist: number; from: number; to: number }>();
   for (const x of readings) {
-    if (readingTime(x) < since) continue;
+    if (readingTime(x, local) < since) continue;
     const e = by.get(x.playlist);
     if (e) e.to = x.mmr;
     else by.set(x.playlist, { playlist: x.playlist, from: x.mmr, to: x.mmr });
