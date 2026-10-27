@@ -181,8 +181,9 @@ function youCard(r: MatchRecord, o: ReportOptions): string {
   const mini = (label: string, value: string, cls = "") => `<div class="mini ${cls}"><b>${value}</b><span>${label}</span></div>`;
   const b = myBoost(r);
   const { before, after } = o.mmr(r);
+  // The change is known once you queue again (the game logs MMR as you queue).
   const mmr = before
-    ? mini(after !== undefined ? `MMR ${signed(after - before)}` : "MMR", round(after ?? before), after === undefined ? "" : after >= before ? "up" : "down")
+    ? mini(after !== undefined ? `MMR ${signed(after - before)}` : "MMR going in", round(after ?? before), after === undefined ? "" : after >= before ? "up" : "down")
     : "";
   return `
     <div class="you-card">

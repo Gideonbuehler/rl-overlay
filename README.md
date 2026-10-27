@@ -145,7 +145,10 @@ to its log (`Documents\My Games\Rocket League\TAGame\Logs\Launch.log`). The over
 reads it (MMR = value × 20 + 100; matches RL Tracker within a game or two) when you
 queue solo or lead the party (member 0, whoever made it; your id comes from the sign-in
 line); in someone else's party the value is theirs, so it's skipped. The game's backup
-logs are read at startup too, so earlier games today are filled in.
+logs are read at startup too, so earlier games today are filled in. The log's queue
+times can be UTC or your PC's local time; the overlay tells which from the first queue
+it sees as the game writes it (until then it assumes UTC), and lines readings up with
+your matches on that clock.
 
 Because it's logged as you queue, each reading is your MMR going into a match, and a
 match's change is known once you queue again. If you play two matches without queuing in
@@ -153,7 +156,8 @@ between (staying in the lobby), neither gets a change rather than one getting bo
 overlay shows MMR next to your name in the report, the change per match there and in All
 matches, the session's change per playlist in the report's top bar (first queue of the
 session to the latest), and HUD stats for MMR, Last game MMR, and Session MMR. The last
-match of a session has no change until your next queue.
+match of a session has no change until your next queue; the report shows "MMR going in"
+until then. Last game MMR skips matches with no MMR (private matches, training).
 
 Saved matches need some play seen (a clock, a touch, or a goal). The end screen keeps
 sending state with a winner after a match, which used to be saved as an extra "match"

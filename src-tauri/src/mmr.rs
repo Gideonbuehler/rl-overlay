@@ -15,6 +15,10 @@
 //! earlier logs (the game keeps a few backups) are read at startup too. The
 //! logs are only read, never written.
 //!
+//! The queue's time can be UTC or the PC's local time. Readings caught as the
+//! game writes them carry the time they were read (`seen`), which tells the
+//! window which one it is (see logIsLocal in src/mmr.ts).
+//!
 //! The log also names each match as it loads ("ScriptLog: MatchGUID: …"),
 //! which the Stats API doesn't reliably pass on; that's emitted as
 //! `match-guid` so saved replays can be linked to the match.
@@ -31,8 +35,11 @@ use tauri::{AppHandle, Emitter};
 pub struct MmrReading {
     playlist: u32,
     mmr: f64,
-    /// When the game logged it, as "YYYY-MM-DD HH:MM:SS" (UTC, per the log).
+    /// When the game logged it, as "YYYY-MM-DD HH:MM:SS" on the log's clock.
     at: String,
+    /// When it was read (Unix ms), if it was read as the game wrote it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    seen: Option<u64>,
 }
 
 /// Every reading seen since the app started, so a window opened later still gets them.
@@ -47,14 +54,17 @@ pub fn mmr_readings() -> Vec<MmrReading> {
     READINGS.lock().map(|r| r.clone()).unwrap_or_default()
 }
 
-fn keep(reading: &MmrReading) {
+/// Stores a reading and sends it to the window.
+fn keep(app: &AppHandle, reading: MmrReading) {
     if let Ok(mut all) = READINGS.lock() {
         all.push(reading.clone());
     }
+    let _ = app.emit("own-mmr", reading);
 }
 
 /// Readings from the game's backup logs (Launch-backup-<date>.log), oldest first.
-fn read_backups(dir: &Path) {
+/// Sent too, not just stored: the window may have asked for them before this finished.
+fn read_backups(app: &AppHandle, dir: &Path) {
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     let mut files: Vec<PathBuf> = entries
         .flatten()
@@ -68,7 +78,7 @@ fn read_backups(dir: &Path) {
         let mut parser = Parser::default();
         for line in String::from_utf8_lossy(&bytes).lines() {
             if let Some(reading) = parser.line(line) {
-                keep(&reading);
+                keep(app, reading);
             }
         }
     }
@@ -130,7 +140,7 @@ impl Parser {
             let solo = rest.starts_with("1)");
             let leading = self.me.is_some() && self.me == self.leader;
             if let (Some(rating), Some((playlist, at)), true) = (self.rating.take(), self.queue.take(), solo || leading) {
-                return Some(MmrReading { playlist, mmr: (rating * 20.0 + 100.0).round(), at });
+                return Some(MmrReading { playlist, mmr: (rating * 20.0 + 100.0).round(), at, seen: None });
             }
         }
         None
@@ -142,7 +152,7 @@ impl Parser {
 pub fn watch(app: AppHandle) {
     std::thread::spawn(move || {
         let Some(dir) = logs_dir() else { return };
-        read_backups(&dir);
+        read_backups(&app, &dir);
         let path = dir.join("Launch.log");
         let mut offset = 0u64;
         let mut parser = Parser::default();
@@ -168,11 +178,15 @@ pub fn watch(app: AppHandle) {
                         // Old match ids in the log (from before the app started)
                         // are skipped: only the match being joined now matters.
                         let catching_up = first_read;
+                        first_read = false;
                         for line in text.lines() {
                             match parser.event(line) {
-                                Some(LogEvent::Mmr(reading)) => {
-                                    keep(&reading);
-                                    let _ = app.emit("own-mmr", reading);
+                                Some(LogEvent::Mmr(mut reading)) => {
+                                    // Logged moments ago, so its time is now on the log's clock.
+                                    if !catching_up {
+                                        reading.seen = Some(crate::gamerun::now_ms());
+                                    }
+                                    keep(&app, reading);
                                 }
                                 Some(LogEvent::MatchGuid(guid)) if !catching_up => {
                                     let _ = app.emit("match-guid", guid);
@@ -183,7 +197,6 @@ pub fn watch(app: AppHandle) {
                     }
                 }
             }
-            first_read = false;
             std::thread::sleep(Duration::from_secs(2));
         }
     });
@@ -240,5 +253,19 @@ mod tests {
         assert_eq!(led.len(), 1);
         assert_eq!(led[0].mmr, 1463.0);
         assert!(run(joined).is_empty(), "someone else's party: their MMR, not yours");
+    }
+
+    #[test]
+    fn sends_seen_only_for_readings_caught_live() {
+        let log = "\
+[0061.10] Matchmaking: Post-divide PartyLeaderMMR: 48.0146
+[0061.10] Matchmaking: StartMatchmaking at 2026-10-24 13:23:52 in USE1,USE3 for playlists 11 on game server
+[0061.10] Matchmaking: PreferredRegions.Length=(2) PreferredPlaylists.Length=(1) Party.GetOrderedPartyMemberIDs().Length=(1)
+";
+        let mut p = Parser::default();
+        let mut r = log.lines().find_map(|l| p.line(l)).expect("a reading");
+        assert_eq!(serde_json::to_string(&r).unwrap(), r#"{"playlist":11,"mmr":1060.0,"at":"2026-10-24 13:23:52"}"#);
+        r.seen = Some(1_761_312_232_000);
+        assert!(serde_json::to_string(&r).unwrap().ends_with(r#","seen":1761312232000}"#));
     }
 }
