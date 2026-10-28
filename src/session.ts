@@ -5,7 +5,7 @@
 // updates all share them. In a plain browser (OBS, the dev page) they fall back
 // to localStorage.
 
-import { DEFAULT_HUD_STATS } from "./hud";
+import { DEFAULT_HUD_STATS, type HudCells, type HudLayout } from "./hud";
 import type { TrackerOverride } from "./names";
 import { DEFAULT_COLUMNS, DEFAULT_TABS } from "./report";
 import type { SpeedUnit } from "./units";
@@ -77,6 +77,10 @@ export interface Settings {
   hudSeen: string[] | null;
   /** HUD size as a percentage. */
   hudScale: number;
+  /** A ready-made layout, or "custom" once stats have been dragged around. */
+  hudLayout: HudLayout;
+  /** Where each stat sits, or null to go by the picker's order. */
+  hudCells: HudCells | null;
   /** Top-left corner as fractions of the screen, or null for the default spot. */
   hudPos: { x: number; y: number } | null;
   /** Where the boost meter's number is, as fractions of the screen. */
@@ -336,6 +340,8 @@ export const loadSettings = () =>
     hudPos: null,
     hudSeen: null,
     hudScale: 100,
+    hudLayout: "columns",
+    hudCells: null,
     boostRegion: null,
     boostLogging: false,
     reportTabs: DEFAULT_TABS,

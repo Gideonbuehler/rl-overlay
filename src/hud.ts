@@ -153,24 +153,134 @@ export const DEFAULT_HUD_STATS = ["boostTotal", "boostUsed", "bpm", "touchShare"
 /** Stats added after the picker shipped; switched on once for existing setups if they're defaults. */
 export const NEW_HUD_STATS = ["boostTotal", "sessionBpm", "mmr", "mmrChange"];
 
-const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// ---------- arrangement ----------
 
-export function renderHud(ids: string[], c: HudContext, boostEnabled: boolean, teamColor: string): string {
-  return withUnitLabels(renderHudStats(ids, c, boostEnabled, teamColor));
+/** Where each stat sits on the HUD: row and column, from 0. */
+export type HudCells = Record<string, { row: number; col: number }>;
+
+/** Ready-made layouts, or "custom" once stats have been dragged around. */
+export type HudLayout = "columns" | "row" | "column" | "custom";
+
+/** Rows and columns in use. */
+export function hudSize(cells: HudCells): { rows: number; cols: number } {
+  let rows = 0;
+  let cols = 0;
+  for (const c of Object.values(cells)) {
+    rows = Math.max(rows, c.row + 1);
+    cols = Math.max(cols, c.col + 1);
+  }
+  return { rows, cols };
 }
 
-function renderHudStats(ids: string[], c: HudContext, boostEnabled: boolean, teamColor: string): string {
-  const stats = ids.map((id) => HUD_STATS.find((s) => s.id === id)).filter((s): s is HudStat => !!s);
+/** Starts the grid at 0, 0 and closes up rows and columns left empty. */
+function compact(cells: HudCells): HudCells {
+  const used = (key: "row" | "col") => [...new Set(Object.values(cells).map((c) => c[key]))].sort((a, b) => a - b);
+  const rows = used("row");
+  const cols = used("col");
+  const out: HudCells = {};
+  for (const [id, c] of Object.entries(cells)) out[id] = { row: rows.indexOf(c.row), col: cols.indexOf(c.col) };
+  return out;
+}
+
+/** The stats `cols` wide, filling rows left to right. */
+export function packHud(ids: string[], cols: number): HudCells {
+  const out: HudCells = {};
+  ids.forEach((id, i) => (out[id] = { row: Math.floor(i / cols), col: i % cols }));
+  return out;
+}
+
+/** Stats in reading order: row by row, left to right. */
+export const readingOrder = (cells: HudCells) =>
+  Object.keys(cells).sort((a, b) => cells[a].row - cells[b].row || cells[a].col - cells[b].col);
+
+/**
+ * Saved spots for the stats shown, kept where they are. Stats without one go
+ * after them: along the row if the HUD is a single row, otherwise into the
+ * first free cell, filling rows left to right. Nothing saved is two columns.
+ */
+export function arrangeHud(ids: string[], saved: HudCells | null): HudCells {
+  const kept: HudCells = {};
+  const taken = new Set<string>();
+  for (const id of ids) {
+    const c = saved?.[id];
+    if (!c || taken.has(`${c.row},${c.col}`)) continue;
+    kept[id] = { row: c.row, col: c.col };
+    taken.add(`${c.row},${c.col}`);
+  }
+  const cells = compact(kept);
+  const { rows, cols } = hudSize(cells);
+  const used = new Set(Object.values(cells).map((c) => `${c.row},${c.col}`));
+  const width = cols || 2;
+  let end = cols;
+  let next = 0;
+  for (const id of ids) {
+    if (cells[id]) continue;
+    if (rows === 1 && cols > 1) {
+      cells[id] = { row: 0, col: end++ };
+      continue;
+    }
+    while (used.has(`${Math.floor(next / width)},${next % width}`)) next++;
+    cells[id] = { row: Math.floor(next / width), col: next % width };
+    used.add(`${cells[id].row},${cells[id].col}`);
+  }
+  return cells;
+}
+
+/**
+ * The HUD's arrangement. A ready-made layout packs the stats in reading order
+ * (so it stays tidy as stats come and go); a custom one keeps its gaps.
+ */
+export function layoutHud(ids: string[], saved: HudCells | null, layout: HudLayout): HudCells {
+  const placed = arrangeHud(ids, saved);
+  if (layout === "custom") return placed;
+  const width = layout === "row" ? Math.max(1, ids.length) : layout === "column" ? 1 : 2;
+  return packHud(readingOrder(placed), width);
+}
+
+/**
+ * Moves a stat to a cell, swapping with any stat already there. A row or
+ * column of -1, or one past the end, adds a new one on that side.
+ */
+export function moveHudStat(cells: HudCells, id: string, row: number, col: number): HudCells {
+  const from = cells[id];
+  if (!from) return cells;
+  const out: HudCells = {};
+  for (const [k, c] of Object.entries(cells)) out[k] = { ...c };
+  const other = Object.keys(out).find((k) => k !== id && out[k].row === row && out[k].col === col);
+  if (other) out[other] = { ...from };
+  out[id] = { row, col };
+  return compact(out);
+}
+
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
+/** The stats, at their cells. While arranging, empty cells show and a tab moves the whole HUD. */
+export function renderHud(ids: string[], cells: HudCells, c: HudContext, boostEnabled: boolean, teamColor: string, arranging = false): string {
+  return withUnitLabels(renderHudStats(ids, cells, c, boostEnabled, teamColor, arranging));
+}
+
+function renderHudStats(ids: string[], cells: HudCells, c: HudContext, boostEnabled: boolean, teamColor: string, arranging: boolean): string {
+  const stats = ids.map((id) => HUD_STATS.find((s) => s.id === id)).filter((s): s is HudStat => !!s && !!cells[s.id]);
   if (!stats.length) return `<p class="hud-empty">Pick stats in settings (Ctrl+Shift+O)</p>`;
-  return stats
+  const at = (row: number, col: number) => `data-row="${row}" data-col="${col}" style="grid-row:${row + 1};grid-column:${col + 1}`;
+  const tiles = stats
     .map((s) => {
       const v = s.value(c);
       const missing = v === null;
       const hint = missing && s.group === "Boost" && !boostEnabled ? "set up" : "–";
       const tone = missing ? null : s.tone?.(c) ?? null;
-      const style = s.group === "Match" ? ` style="--group:${teamColor}"` : "";
-      return `<div class="hud-stat g-${s.group.toLowerCase()} ${missing ? "missing" : ""} ${tone ?? ""}"${style}>
+      const { row, col } = cells[s.id];
+      const group = s.group === "Match" ? `;--group:${teamColor}` : "";
+      return `<div class="hud-stat g-${s.group.toLowerCase()} ${missing ? "missing" : ""} ${tone ?? ""}" data-stat="${s.id}" ${at(row, col)}${group}">
         <b>${missing ? hint : esc(v)}</b><span>${esc(s.label)}</span></div>`;
     })
     .join("");
+  if (!arranging) return tiles;
+  const { rows, cols } = hudSize(cells);
+  const taken = new Set(Object.values(cells).map((p) => `${p.row},${p.col}`));
+  let slots = "";
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) if (!taken.has(`${row},${col}`)) slots += `<div class="hud-slot" ${at(row, col)}"></div>`;
+  }
+  return `<div class="hud-grip">Move HUD</div>${tiles}${slots}`;
 }
