@@ -7,6 +7,7 @@ import "@fontsource/oxanium/800.css";
 import "./style.css";
 import { BoostTracker, emptyBoost } from "./boost";
 import { connect, speedKmh, type Envelope, type Feed, type Status } from "./feed";
+import { hotkeyFrom, hotkeyProblem, isModifierKey, matchesHotkey } from "./hotkeys";
 import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, layoutHud, moveHudStat, renderHud, type HudLayout } from "./hud";
 import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type PlayerBoost } from "./match";
 import { trackerCandidates } from "./names";
@@ -1035,6 +1036,9 @@ addEventListener("resize", () => {
 
 function renderEditor() {
   document.body.classList.toggle("edit", editMode && !calibrating);
+  // Settings closed while recording a hotkey: stop, so the overlay's hotkeys come back.
+  const active = document.activeElement;
+  if (!editMode && active instanceof HTMLInputElement && active.classList.contains("hotkey")) active.blur();
   document.body.classList.toggle("calibrating", calibrating);
   $("setup").hidden = !editMode || calibrating || !setupActive;
   $("editor").hidden = !editMode || calibrating || setupActive;
@@ -1320,17 +1324,6 @@ async function registerHotkey(name: string, accelerator: string): Promise<string
   }
 }
 
-/** Browser fallback: match a KeyboardEvent against "Alt+Shift+S"-style text. */
-function matchesHotkey(e: KeyboardEvent, accelerator: string) {
-  const parts = accelerator.toLowerCase().split("+").map((p) => p.trim());
-  const key = parts.pop() ?? "";
-  const want = (m: string) => parts.some((p) => p === m || (m === "ctrl" && p === "control"));
-  if (want("ctrl") !== e.ctrlKey || want("alt") !== e.altKey || want("shift") !== e.shiftKey) return false;
-  if (/^[a-z]$/.test(key)) return e.code === `Key${key.toUpperCase()}`;
-  if (/^[0-9]$/.test(key)) return e.code === `Digit${key}`;
-  return e.key.toLowerCase() === key || e.code.toLowerCase() === key;
-}
-
 async function setEditMode(on: boolean) {
   if (inTauri) {
     await invoke("set_edit_mode", { on }); // echoes back through the edit-mode event
@@ -1413,16 +1406,45 @@ nameInput.addEventListener("change", () => {
   renderNow();
 });
 
+// Hotkeys are recorded, not typed: click one, then press the key or combination.
+// The overlay lets go of its hotkeys meanwhile, so pressing one reaches the page.
 for (const [input, name, key] of [
   [reportHotkeyInput, "report", "reportHotkey"],
   [hudHotkeyInput, "hud", "hudHotkey"],
 ] as const) {
-  input.addEventListener("change", async () => {
-    const accelerator = input.value.trim();
-    const error = await registerHotkey(name, accelerator);
+  const held = (e: KeyboardEvent) => [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super"].filter(Boolean).join("+");
+  input.addEventListener("focus", () => {
+    input.value = "";
+    input.placeholder = "Press a key…";
+    input.classList.add("capturing");
+    invoke("pause_hotkeys", { paused: true });
+  });
+  input.addEventListener("blur", () => {
+    input.classList.remove("capturing");
+    input.value = settings[key];
+    invoke("pause_hotkeys", { paused: false });
+  });
+  input.addEventListener("keyup", (e) => {
+    if (isModifierKey(e.code)) input.placeholder = held(e) ? `${held(e)}+…` : "Press a key…";
+  });
+  input.addEventListener("keydown", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return;
+    if (e.code === "Escape" && !held(e)) {
+      input.blur();
+      return;
+    }
+    if (isModifierKey(e.code)) {
+      input.placeholder = `${held(e)}+…`;
+      return;
+    }
+    const hotkey = hotkeyFrom(e);
+    const error = !hotkey ? "That key can't be a hotkey." : hotkeyProblem(hotkey) ?? (await registerHotkey(name, hotkey));
     hotkeyError.textContent = error ?? "";
     if (error) return;
-    updateSettings({ [key]: accelerator });
+    updateSettings({ [key]: hotkey });
+    input.blur();
     renderNow();
   });
 }
