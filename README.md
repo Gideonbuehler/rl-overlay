@@ -105,6 +105,9 @@ Only things the in-game scoreboard doesn't: no score, goals, assists, saves, or 
   demos inflicted and taken, shot %, average / top hit speed, hits over 100 km/h,
   and a defence / midfield / attack split of where each player touched the ball.
   Special stats from the stat feed (Epic Save, Aerial Goal...) and who left early.
+  A gold ▲ marks first place in each column (the fewest for times demoed and time on
+  empty boost), and every other column is shaded so a number is easy to follow up to
+  its heading. Your game names who came first when it wasn't you.
 - **Touch map:** every ball touch on a top-down field, yours outlined.
 - **Momentum:** possession swing in 20-second slices with goals marked, plus where
   each goal crossed the line.
