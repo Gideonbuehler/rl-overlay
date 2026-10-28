@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { arrangeHud, layoutHud, moveHudStat, packHud, readingOrder, type HudCells } from "./hud";
+import { arrangeHud, dropHudStat, layoutHud, packHud, readingOrder, type HudCells } from "./hud";
 
 /** Cells as rows of ids, "." for an empty cell, to read the layouts at a glance. */
 function grid(cells: HudCells): string[] {
@@ -38,26 +38,40 @@ describe("arrangeHud", () => {
   });
 });
 
-describe("moveHudStat", () => {
+describe("dropHudStat", () => {
   const two = packHud(["a", "b", "c", "d"], 2); // a b / c d
 
-  it("swaps with the stat already there", () => {
-    expect(grid(moveHudStat(two, "a", 1, 1))).toEqual(["d b", "c a"]);
+  it("goes in beside a stat, pushing it and the stats behind it along", () => {
+    const row = packHud(["a", "b", "c"], 3);
+    // Its own old spot is the gap that takes up the push.
+    expect(grid(dropHudStat(row, "c", { row: 0, col: 1, push: "right" }))).toEqual(["a c b"]);
+    expect(grid(dropHudStat(two, "d", { row: 0, col: 0, push: "right" }))).toEqual(["d a b", "c . ."]);
+  });
+
+  it("pushes down a column too", () => {
+    const three = packHud(["a", "b", "c", "d", "e", "f"], 2); // a b / c d / e f
+    expect(grid(dropHudStat(three, "f", { row: 0, col: 1, push: "down" }))).toEqual(["a f", "c b", "e d"]);
+    expect(grid(dropHudStat(two, "a", { row: 2, col: 1, push: "down" }))).toEqual([". b", "c d", ". a"]);
+  });
+
+  it("moves into an empty cell without pushing anything", () => {
+    const gap = dropHudStat(two, "d", { row: 0, col: 2 }); // a b d / c . .
+    expect(grid(dropHudStat(gap, "a", { row: 1, col: 1 }))).toEqual([". b d", "c a ."]);
   });
 
   it("adds a column past the right or left edge", () => {
-    expect(grid(moveHudStat(two, "c", 0, 2))).toEqual(["a b c", ". d ."]);
-    expect(grid(moveHudStat(two, "b", 1, -1))).toEqual([". a .", "b c d"]);
+    expect(grid(dropHudStat(two, "c", { row: 0, col: 2 }))).toEqual(["a b c", ". d ."]);
+    expect(grid(dropHudStat(two, "b", { row: 1, col: -1 }))).toEqual([". a .", "b c d"]);
   });
 
   it("adds a row above or below", () => {
-    expect(grid(moveHudStat(two, "d", 2, 0))).toEqual(["a b", "c .", "d ."]);
-    expect(grid(moveHudStat(two, "c", -1, 1))).toEqual([". c", "a b", ". d"]);
+    expect(grid(dropHudStat(two, "d", { row: 2, col: 0 }))).toEqual(["a b", "c .", "d ."]);
+    expect(grid(dropHudStat(two, "c", { row: -1, col: 1 }))).toEqual([". c", "a b", ". d"]);
   });
 
   it("closes up a row or column the move empties", () => {
     const tall = packHud(["a", "b", "c"], 1); // a / b / c
-    expect(grid(moveHudStat(tall, "c", 0, 1))).toEqual(["a c", "b ."]);
+    expect(grid(dropHudStat(tall, "c", { row: 0, col: 1 }))).toEqual(["a c", "b ."]);
   });
 });
 
@@ -65,7 +79,7 @@ describe("layoutHud", () => {
   const ids = ["a", "b", "c", "d"];
 
   it("packs ready-made layouts in reading order", () => {
-    const saved = moveHudStat(packHud(ids, 2), "a", 1, 1); // d b / c a
+    const saved = { a: { row: 1, col: 1 }, b: { row: 0, col: 1 }, c: { row: 1, col: 0 }, d: { row: 0, col: 0 } }; // d b / c a
     expect(grid(layoutHud(ids, saved, "row"))).toEqual(["d b c a"]);
     expect(grid(layoutHud(ids, saved, "column"))).toEqual(["d", "b", "c", "a"]);
     expect(grid(layoutHud(ids, saved, "columns"))).toEqual(["d b", "c a"]);
