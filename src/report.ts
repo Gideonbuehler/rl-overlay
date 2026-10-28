@@ -13,6 +13,7 @@ import {
   type PlayerLine,
 } from "./match";
 import { arenaName, isAnonymised, playlistName, platformName, trackerCandidates, type TrackerOverride } from "./names";
+import { LOSS_RUN, METRICS, RECENT_GAMES, changesSentence, fmtValue, type Comparison, type Consistency, type GameLine } from "./consistency";
 import type { Session } from "./session";
 import { latestReading, signed, type MmrReading, type SharedPlayer } from "./mmr";
 import { fmtSpeed, toUnit, withUnitLabels } from "./units";
@@ -48,6 +49,8 @@ export interface ReportOptions {
   shared: (primaryId: string) => SharedPlayer | null;
   /** A short message to show in the footer instead of the usual hint. */
   notice?: string;
+  /** How your play has changed across sessions (see consistency.ts). */
+  consistency?: Consistency;
 }
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -874,6 +877,131 @@ function fieldTab(r: MatchRecord): string {
     </div>`;
 }
 
+// ---------- consistency ----------
+
+const gamesLabel = (n: number) => `${n} game${n === 1 ? "" : "s"}`;
+const metric = (id: string) => METRICS.find((m) => m.id === id)!;
+
+/** How far apart a comparison's two values are, and which way. */
+function changeMark(c: Comparison): string {
+  if (!c.enough) return `<span class="c-note">Not enough yet</span>`;
+  if (!c.significant) return `<span class="c-note">Normal range</span>`;
+  const gap = Math.abs(c.value! - c.base!);
+  const size = c.metric.kind === "rate" ? `${Math.round(gap * 100)} pts` : `${gap.toFixed(1)} s`;
+  const tone = c.worse ? "worse" : c.improved ? "better" : "shift";
+  return `<span class="c-change ${tone}">${c.value! > c.base! ? "▲" : "▼"} ${size}</span>`;
+}
+
+/** Metric rows: the value, what it's compared with, and whether that's more than chance. */
+function compareTable(rows: Comparison[], heads: [string, string]): string {
+  const body = rows.map((c) => `
+    <tr class="${c.worse ? "worse" : c.improved ? "better" : ""}">
+      <th title="${c.metric.better ? "" : "Neither better nor worse, just where you played"}">${c.metric.label}</th>
+      <td class="num">${fmtValue(c.metric, c.value)}</td>
+      <td class="c-n">${c.n ? `${c.n} ${c.metric.unit}` : ""}</td>
+      <td class="num">${fmtValue(c.metric, c.base)}</td>
+      <td>${changeMark(c)}</td>
+    </tr>`).join("");
+  return `<table class="c-table"><thead><tr><th></th><th class="num">${heads[0]}</th><th></th><th class="num">${heads[1]}</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+const trendNote = "Changes are called out only when they're bigger than normal game-to-game variation (95%).";
+
+function trendCard(c: Consistency): string {
+  const t = c.trend;
+  if (!t) {
+    const left = RECENT_GAMES - c.session.length;
+    return card(`Last ${RECENT_GAMES} games`, `<p class="c-lead muted">${c.session.length ? `${gamesLabel(c.session.length)} this session. ` : ""}Play ${left} more game${left === 1 ? "" : "s"} to compare your latest ${RECENT_GAMES} with ${c.games.length > c.session.length ? "your usual" : "the rest"}.</p>`);
+  }
+  const changed = t.rows.filter((r) => r.significant && r.metric.better !== 0);
+  const lead = c.breakReasons.length
+    ? `<p class="c-break"><b>A short break could help.</b> ${changesSentence(c.breakReasons, RECENT_GAMES)}</p>`
+    : changed.length
+      ? `<p class="c-lead">${changesSentence(changed, RECENT_GAMES)}</p>`
+      : `<p class="c-lead">Nothing has moved beyond normal variation over the last ${RECENT_GAMES} games.</p>`;
+  const base = t.baseline === "session" ? `Earlier (${t.base.length})` : `Usual (${t.base.length})`;
+  // Attacking-third touches are left to the after-losses table; the own-third share says enough here.
+  const rows = t.rows.filter((r) => r.metric.id !== "attack");
+  return card(`Last ${RECENT_GAMES} games`, `${lead}${compareTable(rows, [`Last ${RECENT_GAMES}`, base])}
+    <p class="foot">${t.baseline === "session" ? "Against earlier this session" : "Against your other games in the same playlists"}. ${trendNote}</p>`);
+}
+
+/** This session game by game, with the games that stood out from your usual. */
+function sessionCard(c: Consistency): string {
+  if (!c.session.length) return card("This session", `<p class="muted">No finished matches this session yet.</p>`);
+  const flagged = (g: GameLine, id: string) => c.flags.some((f) => f.game === g && f.metric.id === id);
+  const cell = (g: GameLine, id: string) => {
+    const m = metric(id);
+    const [part, whole] = m.total([g]);
+    return `<td class="num ${flagged(g, id) ? "flag" : ""}">${whole ? fmtValue(m, part / whole) : "–"}</td>`;
+  };
+  // Newest first, so the latest games show without scrolling.
+  const rows = [...c.session].reverse().map((g) => `
+    <tr>
+      <th>${g.nth}</th>
+      <td class="${g.won ? "win-text" : "loss-text"}">${g.won ? "W" : "L"}</td>
+      ${cell(g, "challenges")}${cell(g, "risky")}${cell(g, "regain")}<td class="num">${g.goals}/${g.shots}</td>${cell(g, "defence")}
+    </tr>`).join("");
+  const notes = c.flags.map((f) => {
+    const what = f.metric.id === "risky"
+      ? `lost ${f.part} of ${f.whole} 50/50s in your own third (usually ${fmtValue(f.metric, f.usual)})`
+      : `your team took ${(f.part / f.whole).toFixed(1)} s on average to win the ball back (usually ${f.usual.toFixed(1)} s)`;
+    return `<li><b>Game ${f.game.nth}:</b> ${what}</li>`;
+  }).join("");
+  return card("This session", `
+    <div class="c-scroll"><table class="c-table c-games">
+      <thead><tr><th>#</th><th></th><th title="50/50s your team came out of with the ball">50/50 won</th><th title="50/50s lost with the ball in your own third">Lost deep</th><th title="Your team's average time to win the ball back">Win back</th><th>Goals/shots</th><th title="Share of your touches in your own third">Own third</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    ${notes ? `<ul class="c-flags">${notes}</ul>` : `<p class="foot">No game this session stood out from your usual on risky 50/50s or winning the ball back.</p>`}`);
+}
+
+function afterLossesCard(c: Consistency): string {
+  const n = c.afterLosses.games.length;
+  const title = `After ${LOSS_RUN}+ losses in a row`;
+  if (n < 3) return card(title, `<p class="muted">${n ? `Only ${gamesLabel(n)} so far` : "No games yet"} straight after ${LOSS_RUN} or more losses in a row. This fills in as you play.</p>`);
+  const won = c.afterLosses.games.filter((g) => g.won).length;
+  return card(title, `<p class="c-lead">${gamesLabel(n)} came straight after a losing run; you won ${won} (${pct(won, n)}%).</p>
+    ${compareTable(c.afterLosses.rows, ["After", "Otherwise"])}`);
+}
+
+function sessionLengthCard(c: Consistency): string {
+  const ids = ["challenges", "regain", "accuracy", "defence"];
+  const short: Record<string, string> = { challenges: "50/50s won", regain: "Win back", accuracy: "Accuracy", defence: "Own third" };
+  const rows = c.byLength.map((b) => {
+    if (!b.games.length) return `<tr class="empty"><th>${b.label}</th><td class="num">0</td><td colspan="${ids.length + 1}" class="c-note">No games yet</td></tr>`;
+    const cells = ids.map((id) => {
+      const cmp = b.rows.find((r) => r.metric.id === id)!;
+      const tone = cmp.worse ? "worse" : cmp.improved ? "better" : cmp.significant ? "shift" : "";
+      const thin = cmp.n < cmp.metric.min ? " thin" : "";
+      return `<td class="num ${tone}${thin}">${fmtValue(cmp.metric, cmp.value)}</td>`;
+    }).join("");
+    return `<tr><th>${b.label}</th><td class="num">${b.games.length}</td><td class="num">${pct(b.wins, b.games.length)}%</td>${cells}</tr>`;
+  }).join("");
+  return card("By session length", `
+    <table class="c-table c-length">
+      <thead><tr><th>Game</th><th class="num">Played</th><th class="num">Won</th>${ids.map((id) => `<th class="num" title="${metric(id).label}">${short[id]}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="foot">Each row is compared with all your other games; coloured values differ by more than chance, faded ones rest on too few plays.</p>`);
+}
+
+function consistencyTab(_r: MatchRecord, o: ReportOptions): string {
+  const c = o.consistency;
+  if (!c) return `<p class="muted">No match history yet.</p>`;
+  return `<div class="tab-grid consistency">${trendCard(c)}${sessionCard(c)}${afterLossesCard(c)}${sessionLengthCard(c)}</div>`;
+}
+
+/** A note over the newest match when your own numbers have dropped. */
+function breakNote(o: ReportOptions): string {
+  const reasons = o.consistency?.breakReasons ?? [];
+  if (!reasons.length) return "";
+  const what = reasons.map((c) => `${c.metric.label.toLowerCase()} ${fmtValue(c.metric, c.base)} → ${fmtValue(c.metric, c.value)}`).join(" · ");
+  const open = o.tabs.includes("consistency");
+  return `<${open ? `button data-tab="consistency" tabindex="-1"` : "div"} class="break-note">
+    <b>Last ${RECENT_GAMES} games:</b> ${what}. A short break could help.${open ? `<span class="go">Details</span>` : ""}</${open ? "button" : "div"}>`;
+}
+
 export interface TabDef {
   id: string;
   label: string;
@@ -886,8 +1014,11 @@ export const TABS: TabDef[] = [
   { id: "boost", label: "Boost", render: boostSection },
   { id: "goals", label: "Goals", render: goalsTab },
   { id: "field", label: "Field", render: fieldTab },
+  { id: "consistency", label: "Consistency", render: consistencyTab },
 ];
 export const DEFAULT_TABS = TABS.map((t) => t.id);
+/** Tabs added after the tab list shipped; switched on once for existing setups. */
+export const NEW_TABS = ["consistency"];
 
 export function renderReport(
   entries: ReportEntry[],
@@ -916,7 +1047,10 @@ export function renderReport(
     .join("");
 
   const title = `${resultLabel(r, entry.live).text} · ${esc(playlistName(r.playlistId))} · ${entry.live ? "now" : `${dayLabel(r.endedAt ?? r.startedAt)} ${timeOfDay(r.endedAt ?? r.startedAt)}`}`;
+  // The break note goes on the newest finished match, the one that pops up after a game.
+  const newest = !entry.live && entries.findIndex((e) => !e.live) === index;
   return withUnitLabels(`${topBar(view, entries, s, title)}${header(r, entry.live, o)}
+    ${newest && open?.id !== "consistency" ? breakNote(o) : ""}
     <nav class="r-tabs">${bar}</nav>
     <div class="tab-content">${open ? open.render(r, o) : `<p class="muted">All tabs are hidden in settings.</p>`}</div>
     ${hint}`);

@@ -1850,3 +1850,141 @@ button.link {
 .actions button[hidden] {
   display: none;
 }
+
+/* Consistency tab: your latest games against your usual */
+.tab-grid.consistency {
+  grid-template-columns: 1.1fr 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.tab-grid.consistency > .card {
+  overflow-y: auto;
+}
+.c-lead {
+  margin: 0 0 var(--space-2) !important;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.c-break {
+  margin: 0 0 var(--space-2) !important;
+  padding: var(--space-2) var(--space-3);
+  clip-path: var(--chamfer-sm);
+  background: color-mix(in srgb, var(--boost) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--boost);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.c-break b {
+  color: var(--boost);
+}
+.c-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+.c-table th,
+.c-table td {
+  padding: 2px var(--space-2);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.c-table thead th {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.c-table tbody th {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.c-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.c-table .c-n {
+  padding-left: 2px;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+}
+.c-scroll {
+  max-height: 150px;
+  overflow-y: auto;
+}
+.c-table tr.worse th,
+.c-table td.worse,
+.c-change.worse {
+  color: var(--boost);
+}
+.c-table tr.better th,
+.c-table td.better,
+.c-change.better {
+  color: var(--cyan);
+}
+.c-table td.shift,
+.c-change.shift {
+  color: var(--text);
+}
+.c-table td.thin {
+  opacity: 0.45;
+}
+.c-table td.flag {
+  color: var(--boost);
+  background: color-mix(in srgb, var(--boost) 12%, transparent);
+}
+.c-change {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.c-note {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+.c-games th:first-child {
+  width: 1.5em;
+  color: var(--muted);
+}
+.c-flags {
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.c-flags b {
+  color: var(--boost);
+}
+
+/* The note over the newest match when your numbers have dropped */
+.break-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  clip-path: var(--chamfer-sm);
+  background: color-mix(in srgb, var(--boost) 10%, transparent);
+  box-shadow: inset 3px 0 0 var(--boost);
+  font: var(--fs-sm) var(--font);
+  color: var(--text-dim);
+  text-align: left;
+}
+.break-note b {
+  color: var(--boost);
+}
+button.break-note {
+  cursor: pointer;
+}
+button.break-note:hover {
+  background: color-mix(in srgb, var(--boost) 18%, transparent);
+}
+.break-note .go {
+  margin-left: auto;
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--boost);
+}

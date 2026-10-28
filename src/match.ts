@@ -40,6 +40,12 @@ export interface PlayerLine {
   /** Special stats from the stat feed, e.g. { "Epic Save": 2 }. */
   feats: Record<string, number>;
   left: boolean;
+  /** 50/50s this player was in (see CHALLENGE_MS). Missing on matches saved before they were tracked. */
+  challenges?: number;
+  /** Of those, ones their team came out of with the ball (the next touch, or a goal). */
+  challengesWon?: number;
+  /** Ones they lost with the ball in their own third. */
+  challengesLostDefence?: number;
 }
 
 export interface HitPoint {
@@ -139,6 +145,13 @@ export interface MatchRecord {
   replayBoost?: PlayerBoost[] | null;
   /** You left before full time (no result recorded). */
   leftEarly?: boolean;
+  /**
+   * Per team: seconds spent, and how many times, winning the ball back after
+   * the other team took it. Missing on matches saved before it was tracked.
+   */
+  regain?: { time: [number, number]; count: [number, number] };
+  /** When the session it was played in started; set when it's saved. */
+  sessionStart?: number;
 }
 
 /** A real match has at least two players; free play and training have just you. */
@@ -157,6 +170,10 @@ export const HARD_HIT = 100;
 const AERIAL_Z = 300;
 /** Field half-length; thirds split at a third of that either side of centre. */
 const THIRD_Y = 5120 / 3;
+/** Touches by both teams this close together (ms) are a 50/50 challenge. */
+export const CHALLENGE_MS = 500;
+/** A longer wait for the ball counts as this long (ms), so one long spell doesn't swamp a match. */
+const REGAIN_CAP_MS = 15_000;
 const HIT_LIMIT = 800;
 
 const TEAM_FALLBACK = ["#2f7dff", "#ff8a1f"];
@@ -192,6 +209,7 @@ export function freshRecord(guid = ""): MatchRecord {
     ballTop: 0,
     crossbars: [0, 0],
     boost: null,
+    regain: { time: [0, 0], count: [0, 0] },
   };
 }
 
@@ -202,6 +220,7 @@ function blankPlayer(name: string, team: number): PlayerLine {
     touches: 0, bumps: 0, demos: 0, demoed: 0, aerials: 0, firstTouches: 0,
     thirds: [0, 0, 0], hits: 0, hitSum: 0, topHit: 0, hardHits: 0,
     feats: {}, left: false,
+    challenges: 0, challengesWon: 0, challengesLostDefence: 0,
   };
 }
 
@@ -239,6 +258,14 @@ export class MatchTracker {
   private lastTick = 0;
   /** True when we saw MatchCreated, so the first clock reading is the full length. */
   private sawStart = false;
+  /** The latest touch in live play, and whether it was in the toucher's own third. */
+  private lastTouch: { name: string; team: number; at: number; ownThird: boolean } | null = null;
+  /** A 50/50 under way: who's in it, and when it was last touched. */
+  private contest: { players: Map<string, { team: number; ownThird: boolean }>; lastAt: number } | null = null;
+  /** Per team, when the other team took the ball from it, until it touches the ball again. */
+  private lostAt: [number | null, number | null] = [null, null];
+  /** Milliseconds, for timing touches; tests swap in their own clock. */
+  now = () => performance.now();
 
   private player(ref: { Name: string; TeamNum?: number }): PlayerLine {
     return (this.record.players[ref.Name] ??= blankPlayer(ref.Name, ref.TeamNum ?? 0));
@@ -259,6 +286,7 @@ export class MatchTracker {
         this.roundActive = false;
         this.awaitingFirstTouch = true;
         this.goalThisRound = false;
+        this.clearPossession();
         return false;
 
       case "RoundStarted":
@@ -295,6 +323,9 @@ export class MatchTracker {
         this.roundActive = false;
         const scorer: PlayerRef | undefined = Data.Scorer;
         const team = scorer?.TeamNum ?? 0;
+        // A 50/50 that led straight to the goal went to the scoring side.
+        this.settleContest(team);
+        this.clearPossession();
         const score: [number, number] = [r.teams[0].score, r.teams[1].score];
         score[team]++;
         const at = duration(r);
@@ -352,6 +383,7 @@ export class MatchTracker {
 
       case "MatchEnded":
         this.roundActive = false;
+        this.clearPossession();
         r.winner = Data.WinnerTeamNum ?? null;
         r.endedAt = Date.now();
         return true;
@@ -368,6 +400,7 @@ export class MatchTracker {
     this.roundStartedAt = 0;
     this.lastTick = 0;
     this.sawStart = false;
+    this.clearPossession();
   }
 
   private applyHit(data: any) {
@@ -399,6 +432,70 @@ export class MatchTracker {
         r.hits.push({ x: Math.round(loc.X ?? 0), y: Math.round(loc.Y ?? 0), name: ref.Name, team: ref.TeamNum });
       }
     }
+    this.trackPossession(refs, loc);
+  }
+
+  /**
+   * 50/50s, and how long each team takes to win the ball back. A 50/50 is
+   * both teams touching the ball within CHALLENGE_MS; whoever's team touches
+   * it next once it's over (or scores) won it.
+   */
+  private trackPossession(refs: PlayerRef[], loc: { Y?: number } | undefined) {
+    const r = this.record;
+    const t = this.now();
+    const touches = refs
+      .filter((ref) => ref.TeamNum === 0 || ref.TeamNum === 1)
+      .map((ref) => ({
+        name: ref.Name,
+        team: ref.TeamNum as 0 | 1,
+        ownThird: !!loc && (loc.Y ?? 0) * (ref.TeamNum === 0 ? 1 : -1) < -THIRD_Y,
+      }));
+    if (!touches.length) return;
+    if (this.contest && t - this.contest.lastAt > CHALLENGE_MS) this.settleContest(touches[0].team);
+
+    const last = this.lastTouch;
+    const close = !!last && t - last.at <= CHALLENGE_MS;
+    if (new Set(touches.map((x) => x.team)).size > 1 || (close && last!.team !== touches[0].team)) {
+      this.contest ??= { players: new Map(), lastAt: t };
+      if (close) this.contest.players.set(last!.name, { team: last!.team, ownThird: last!.ownThird });
+      for (const x of touches) this.contest.players.set(x.name, { team: x.team, ownThird: x.ownThird });
+      this.contest.lastAt = t;
+    }
+
+    // Back on the ball: how long since the other team took it, unless it was all one 50/50.
+    for (const team of new Set(touches.map((x) => x.team))) {
+      const lost = this.lostAt[team];
+      if (lost !== null && t - lost > CHALLENGE_MS) {
+        r.regain ??= { time: [0, 0], count: [0, 0] };
+        r.regain.time[team] += Math.min(t - lost, REGAIN_CAP_MS) / 1000;
+        r.regain.count[team]++;
+      }
+      this.lostAt[team] = null;
+    }
+    const toucher = touches[touches.length - 1];
+    if (last && last.team !== toucher.team && this.lostAt[last.team as 0 | 1] === null) this.lostAt[last.team as 0 | 1] = t;
+    this.lastTouch = { ...toucher, at: t };
+  }
+
+  /** Books a finished 50/50 for everyone in it, if both teams were. */
+  private settleContest(winner: number) {
+    const c = this.contest;
+    this.contest = null;
+    if (!c || new Set([...c.players.values()].map((p) => p.team)).size < 2) return;
+    for (const [name, x] of c.players) {
+      const p = this.record.players[name];
+      if (!p) continue;
+      p.challenges = (p.challenges ?? 0) + 1;
+      if (x.team === winner) p.challengesWon = (p.challengesWon ?? 0) + 1;
+      else if (x.ownThird) p.challengesLostDefence = (p.challengesLostDefence ?? 0) + 1;
+    }
+  }
+
+  /** A kickoff, goal, or full time: nobody has the ball, and an open 50/50 counts for nothing. */
+  private clearPossession() {
+    this.contest = null;
+    this.lastTouch = null;
+    this.lostAt = [null, null];
   }
 
   private applyState(data: any) {

@@ -65,6 +65,7 @@ The match report is split into tabs, each a fixed-size page:
 - **Boost:** exact boost for everyone from the saved replay, or your screen estimate.
 - **Goals:** large momentum chart, every goal, and where they went in.
 - **Field:** touch map and each player's defence / midfield / attack split.
+- **Consistency:** how your own play is changing across the session (see below).
 
 Settings (Ctrl+Shift+O) > Match report: tick the tabs you want, reorder them (the
 first opens after each match), and pick the player-table columns.
@@ -119,6 +120,39 @@ Only things the in-game scoreboard doesn't: no score, goals, assists, saves, or 
   hit speed, hard hits, bumps, demos, crossbars, ball speed.
 
 Session W/L sits at the top right; the session and archive are kept between launches.
+
+### Consistency
+
+The Consistency tab looks for patterns in your own numbers across games. It doesn't
+guess at how you feel. It only names a change when the gap is bigger than normal
+game-to-game variation would explain (a 95% test, with a minimum number of plays behind
+both sides), and it always shows the numbers and how many plays they rest on.
+
+- **Last 4 games** of this session against earlier this session (once there are 4 earlier
+  games), or else against your other games in the same playlists: 50/50s won, 50/50s lost
+  in your own third, how long your team takes to win the ball back, shot accuracy, and
+  where your touches were.
+- **A short break could help:** when at least two of those dropped over your last 4 games,
+  e.g. "Over the last 4 games, your 50/50 success fell from 58% to 33% and your team's time
+  to win the ball back rose from 2.6 s to 4.4 s." The same note sits over the newest match
+  report. Results alone never trigger it.
+- **This session**, game by game, highlighting games with unusually many 50/50s lost in
+  your own third, or unusually slow recoveries, against your usual.
+- **After 2+ losses in a row:** the games that came straight after a losing run (in the
+  same session) against all your others, on the same measures.
+- **By session length:** games 1–3, 4–6, 7–9, and 10+ of a session, each against the rest.
+
+What can be measured is limited by the Stats API, which reports who touched the ball and
+where the ball was, but not where cars are:
+
+- A **50/50** is both teams touching the ball within half a second; it's won when your team
+  touches it next (or scores), and lost deep when lost with the ball in your third.
+- **Positioning** is where your touches happened, by third of the field.
+- **Winning the ball back** is the time from the other team taking the ball to your team
+  touching it again (capped at 15 s; quick exchanges inside a 50/50 don't count).
+
+50/50s and recoveries are tracked from this version on, so older matches only count
+toward accuracy and positioning.
 
 ## Replays: exact boost and watching goals
 
@@ -311,7 +345,8 @@ src/match.ts      builds a full match record from the event stream
 src/report.ts     renders the match report; section and column catalogues
 src/names.ts      playlist, arena, and platform names
 src/session.ts    session (worked out from the archive), settings, saved data
-src/*.test.ts     Vitest tests for session.ts and match.ts
+src/consistency.ts  trends in your own play across games and sessions
+src/*.test.ts     Vitest tests (session, match tracking, consistency, HUD, hotkeys, MMR)
 src/hud.ts        compact HUD and its stat catalogue
 src/boost.ts      boost used/collected from readings
 src/mmr.ts        your MMR history and the shared MMR client
