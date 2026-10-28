@@ -89,6 +89,8 @@ export interface Settings {
   boostLogging: boolean;
   /** Match report tab ids in display order; ones not listed are hidden. */
   reportTabs: string[];
+  /** Tab ids that existed when the tab list was last set up, so new tabs can be switched on once. */
+  reportTabsSeen: string[] | null;
   /** Player-table column ids. */
   reportColumns: string[];
   /** Seconds of play to show before a goal when jumping to it in a replay. */
@@ -237,10 +239,10 @@ export function countsForSession(r: MatchRecord): boolean {
   return r.winner !== null || !!r.leftEarly;
 }
 
-const matchEnd = (r: MatchRecord) => r.endedAt ?? r.startedAt;
+export const matchEnd = (r: MatchRecord) => r.endedAt ?? r.startedAt;
 
 /** Leaving early is a loss, as Rocket League itself counts it. */
-const isWin = (r: MatchRecord) => !r.leftEarly && r.winner === r.myTeam;
+export const isWin = (r: MatchRecord) => !r.leftEarly && r.winner === r.myTeam;
 
 /**
  * The session, worked out from the matches since it started (archive is
@@ -345,6 +347,7 @@ export const loadSettings = () =>
     boostRegion: null,
     boostLogging: false,
     reportTabs: DEFAULT_TABS,
+    reportTabsSeen: null,
     reportColumns: DEFAULT_COLUMNS,
     replayLeadIn: 6,
     speedUnit: "kmh",
