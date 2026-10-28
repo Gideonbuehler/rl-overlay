@@ -1988,3 +1988,189 @@ button.break-note:hover {
   text-transform: uppercase;
   color: var(--boost);
 }
+
+/* Skills tab: the radar and what each score is made of */
+.tab-grid.skills {
+  grid-template-columns: 1fr 1.15fr;
+}
+.tab-grid.skills > .card {
+  overflow-y: auto;
+}
+.sk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.sk-wins {
+  display: flex;
+  gap: 2px;
+}
+.sk-win {
+  min-width: 34px;
+  padding: 3px var(--space-2);
+  border: 1px solid var(--line-strong);
+  background: none;
+  color: var(--muted);
+  font: 600 var(--fs-xs) var(--font);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.sk-win:hover {
+  color: var(--cyan);
+}
+.sk-win.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.sk-radar {
+  display: block;
+  width: 100%;
+  max-height: 390px;
+  margin: var(--space-1) 0;
+  overflow: visible;
+}
+.sk-ring,
+.sk-axis {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.sk-ring.mid {
+  stroke: var(--line-strong);
+}
+.sk-tick {
+  fill: var(--muted);
+  font-size: 9px;
+}
+.sk-before {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.sk-now {
+  fill: color-mix(in srgb, var(--cyan) 14%, transparent);
+  stroke: var(--cyan);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.sk-dot {
+  fill: var(--cyan);
+  stroke: var(--panel-solid);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+.sk-dot.hollow {
+  fill: var(--panel-solid);
+  stroke: var(--cyan);
+}
+.sk-half {
+  fill: var(--cyan);
+}
+.sk-label .name {
+  fill: var(--text-dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sk-label .value {
+  fill: var(--text);
+  font: 800 17px var(--font-display);
+}
+.sk-label .src {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.sk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--text-dim);
+}
+.sk-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sk-legend svg {
+  width: 12px;
+  height: 12px;
+  overflow: visible;
+}
+.sk-legend .sw {
+  width: 14px;
+  height: 2px;
+  background: var(--cyan);
+}
+.sk-legend .sw.before {
+  background: var(--muted);
+}
+.sk-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 36px 58px 84px;
+  align-items: center;
+  column-gap: var(--space-2);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line);
+}
+.sk-mark {
+  width: 12px;
+  height: 12px;
+  overflow: visible;
+}
+.sk-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sk-name b {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.sk-name em {
+  font-style: normal;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+.sk-score {
+  font: 800 var(--fs-lg) / 1 var(--font-display);
+  text-align: right;
+}
+.sk-change {
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+.sk-trail {
+  width: 84px;
+  height: 22px;
+}
+.sk-trail line {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.sk-trail polyline {
+  fill: none;
+  stroke: var(--cyan);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.sk-inputs {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+.sk-inputs b {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.sk-inputs .none {
+  opacity: 0.7;
+}
