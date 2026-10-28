@@ -1801,6 +1801,14 @@ button.link {
   outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
+/* Hotkeys are recorded from the keys pressed, not typed. */
+#editor input.hotkey {
+  caret-color: transparent;
+  cursor: pointer;
+}
+#editor input.hotkey.capturing::placeholder {
+  color: var(--accent);
+}
 .error {
   color: var(--loss);
 }

@@ -93,6 +93,16 @@ fn set_hotkey(app: AppHandle, name: String, accelerator: String) -> Result<(), S
     Ok(())
 }
 
+/// Lets go of the overlay's hotkeys while settings records a new one, so the
+/// keys reach the page instead of firing, and takes them back after.
+#[tauri::command]
+fn pause_hotkeys(app: AppHandle, paused: bool) {
+    let shortcuts = app.global_shortcut();
+    for (_, s) in HOTKEYS.lock().unwrap().iter() {
+        let _ = if paused { shortcuts.unregister(*s) } else { shortcuts.register(*s) };
+    }
+}
+
 /// Runs in RL Tracker pages the overlay opens. When the page says the player
 /// wasn't found, it moves on to the next candidate profile (another platform),
 /// handed over in the URL as `#rlo=<json list>`. It only navigates; it reads
@@ -285,6 +295,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             set_edit_mode,
             set_hotkey,
+            pause_hotkeys,
             open_tracker,
             show_tracker,
             set_keyboard,
