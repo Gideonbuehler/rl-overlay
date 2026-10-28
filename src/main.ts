@@ -1363,6 +1363,9 @@ if (inTauri) {
     if (!editMode && calibrating) endCalibration(true);
     renderNow();
   });
+  // Settings can be opened as this window opens (from the tray, or the hotkey
+  // while it's closed between games), before the listener above was there.
+  editMode = (await invoke<boolean>("get_edit_mode")) ?? editMode;
   await listen<string>("hotkey", (e) => (e.payload === "hud" ? toggleHud() : toggleReport()));
   await listen<MmrReading>("own-mmr", (e) => onOwnMmr(e.payload));
   // Readings the app found before this window was listening (it can open after the game).
