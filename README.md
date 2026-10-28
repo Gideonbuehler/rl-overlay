@@ -39,7 +39,10 @@ settings runs out).
 - **Alt+Shift+S** shows or hides the report at any time. Mid-match it shows live
   numbers. Change the hotkey in settings; it is global, so pick something no other
   app needs.
-- Both hotkeys can be changed in settings.
+- Both hotkeys can be changed in settings: click one and press the key or combination
+  you want. A key like F2, Insert, or a numpad key works on its own; letters, numbers,
+  Space and the like need Ctrl or Alt with them, since a hotkey takes its key from
+  every other app (Rocket League's chat included) while the overlay runs.
 - Speeds show in km/h or mph (settings > General).
 - **Open and close with Rocket League** (settings > General) registers the app to
   start with Windows. It waits in the tray, opens the overlay when the game's window

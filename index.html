@@ -64,13 +64,17 @@
         <div class="row">
           <label>
             Match report hotkey
-            <input id="report-hotkey" placeholder="Alt+Shift+S" spellcheck="false" />
+            <input id="report-hotkey" class="hotkey" readonly title="Click, then press the key or combination you want" />
           </label>
           <label>
             HUD hotkey
-            <input id="hud-hotkey" placeholder="Alt+Shift+D" spellcheck="false" />
+            <input id="hud-hotkey" class="hotkey" readonly title="Click, then press the key or combination you want" />
           </label>
         </div>
+        <p class="muted">
+          Click a hotkey, then press the key or combination you want (Esc cancels). A key like F2
+          works on its own; it's taken from every other app while the overlay runs.
+        </p>
         <span id="hotkey-error" class="error"></span>
         <label>
           Hide the post-match report after (seconds, 0 = until the next match)
