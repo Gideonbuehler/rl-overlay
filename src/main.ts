@@ -13,7 +13,8 @@ import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type 
 import { trackerCandidates } from "./names";
 import { setSpeedUnit, type SpeedUnit } from "./units";
 import { DEFAULT_SERVER_URL, SharedMmr, latestReading, logIsLocal, matchMmr, newShareToken, readingTime, utcAt, type MmrReading } from "./mmr";
-import { COLUMNS, TABS, ZONES_COLUMN, overrideKey, renderReport, type ReportEntry, type ReportView } from "./report";
+import { COLUMNS, DEFAULT_TABS, NEW_TABS, TABS, ZONES_COLUMN, overrideKey, renderReport, type ReportEntry, type ReportView } from "./report";
+import { analyse, type Consistency } from "./consistency";
 import {
   ARCHIVE_LIMIT,
   computeSession,
@@ -54,6 +55,13 @@ setSpeedUnit(settings.speedUnit);
   };
   saveSettings(settings);
 }
+// Likewise show report tabs added since the tab list was set up.
+{
+  const seen = settings.reportTabsSeen ?? TABS.map((t) => t.id).filter((id) => !NEW_TABS.includes(id));
+  const added = DEFAULT_TABS.filter((id) => !seen.includes(id) && !settings.reportTabs.includes(id));
+  settings = { ...settings, reportTabs: [...settings.reportTabs, ...added], reportTabsSeen: TABS.map((t) => t.id) };
+  saveSettings(settings);
+}
 /** When the current session started; the rest of it is worked out from the archive. */
 let sessionStart = loadSessionStart();
 let session = emptySession();
@@ -80,9 +88,13 @@ let away = false;
 /** Finished matches, newest first, for the history selector. */
 const archive = loadArchive();
 
+/** How your play has changed over this session and others; recomputed with the session. */
+let consistency: Consistency = analyse([], 0);
+
 /** Recomputes the session from the matches since it started. */
 function refreshSession() {
   session = computeSession(archive, sessionStart, readings);
+  consistency = analyse(archive, sessionStart);
 }
 
 /** When Rocket League was last opened (a restart within 5 minutes doesn't count), or 0. */
@@ -380,6 +392,7 @@ function finishMatch() {
   finished = r;
   // Reconnected after this match was already booked.
   if (r.guid && archive.some((a) => a.guid === r.guid)) return;
+  r.sessionStart = sessionStart;
   archive.unshift(structuredClone(r));
   archive.length = Math.min(archive.length, ARCHIVE_LIMIT);
   saveArchive(archive);
@@ -541,6 +554,7 @@ function saveLeftMatch() {
   r.leftEarly = true;
   r.endedAt ??= Date.now();
   if (!(r.guid && archive.some((a) => a.guid === r.guid))) {
+    r.sessionStart = sessionStart;
     archive.unshift(structuredClone(r));
     archive.length = Math.min(archive.length, ARCHIVE_LIMIT);
     saveArchive(archive);
@@ -929,6 +943,7 @@ function renderNow() {
         mmr: mmrFor,
         shared: (id) => sharedMmr.get(id),
         notice,
+        consistency,
       },
       view,
     );
