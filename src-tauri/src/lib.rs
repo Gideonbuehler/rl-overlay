@@ -48,14 +48,35 @@ fn set_edit(window: &WebviewWindow, on: bool) {
 }
 
 fn toggle_edit(app: &AppHandle) {
+    match app.get_webview_window("main") {
+        Some(window) => set_edit(&window, !EDIT_MODE.load(Ordering::Relaxed)),
+        // Closed, as it is between games when it opens and closes with Rocket League.
+        // Opened off the hotkey's thread, like the window the game opens (autorun).
+        None => {
+            let app = app.clone();
+            std::thread::spawn(move || open_settings(&app));
+        }
+    }
+}
+
+/// Opens the overlay on its settings, opening the window first if it's closed.
+/// A page that's still loading asks for the state (get_edit_mode), since the
+/// edit-mode event goes out before it listens.
+fn open_settings(app: &AppHandle) {
+    open_overlay(app);
     if let Some(window) = app.get_webview_window("main") {
-        set_edit(&window, !EDIT_MODE.load(Ordering::Relaxed));
+        set_edit(&window, true);
     }
 }
 
 #[tauri::command]
 fn set_edit_mode(window: WebviewWindow, on: bool) {
     set_edit(&window, on);
+}
+
+#[tauri::command]
+fn get_edit_mode() -> bool {
+    EDIT_MODE.load(Ordering::Relaxed)
 }
 
 /// Binds a named hotkey. On failure the previous binding stays in place.
@@ -282,10 +303,7 @@ pub fn run() {
                         let _ = app.emit("hotkey", event.id.as_ref());
                     }
                     "open" => open_overlay(app),
-                    "edit" => {
-                        open_overlay(app);
-                        toggle_edit(app);
-                    }
+                    "edit" => open_settings(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -294,6 +312,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             set_edit_mode,
+            get_edit_mode,
             set_hotkey,
             pause_hotkeys,
             open_tracker,

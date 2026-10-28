@@ -50,8 +50,9 @@ settings runs out).
   stays for next time. An overlay you open yourself without the game stays open. Use
   this with the installed build (`npm run tauri build`): the dev build loads its page
   from the Vite dev server, which won't be running at sign-in.
-- **Ctrl+Shift+O** opens settings (also in the tray menu). While settings are open
-  the overlay takes the mouse; otherwise clicks go straight through to the game.
+- **Ctrl+Shift+O** opens settings (also in the tray menu), opening the overlay first
+  if it's closed between games. While settings are open the overlay takes the mouse;
+  otherwise clicks go straight through to the game.
 - Set your in-game name so the overlay knows which player is you. Left empty, it
   follows whoever the camera is on.
 - Quit from the tray icon or the settings panel.
