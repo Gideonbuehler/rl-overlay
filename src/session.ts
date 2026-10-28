@@ -93,6 +93,8 @@ export interface Settings {
   reportTabsSeen: string[] | null;
   /** Player-table column ids. */
   reportColumns: string[];
+  /** How many recent matches the skill radar covers. */
+  skillWindow: number;
   /** Seconds of play to show before a goal when jumping to it in a replay. */
   replayLeadIn: number;
   speedUnit: SpeedUnit;
@@ -349,6 +351,7 @@ export const loadSettings = () =>
     reportTabs: DEFAULT_TABS,
     reportTabsSeen: null,
     reportColumns: DEFAULT_COLUMNS,
+    skillWindow: 25,
     replayLeadIn: 6,
     speedUnit: "kmh",
     trackerOverrides: {},

@@ -67,6 +67,7 @@ The match report is split into tabs, each a fixed-size page:
 - **Goals:** large momentum chart, every goal, and where they went in.
 - **Field:** touch map and each player's defence / midfield / attack split.
 - **Consistency:** how your own play is changing across the session (see below).
+- **Skills:** a skill radar built from your last 10, 25, or 50 matches (see below).
 
 Settings (Ctrl+Shift+O) > Match report: tick the tabs you want, reorder them (the
 first opens after each match), and pick the player-table columns.
@@ -154,6 +155,33 @@ where the ball was, but not where cars are:
 
 50/50s and recoveries are tracked from this version on, so older matches only count
 toward accuracy and positioning.
+
+### Skills
+
+The Skills tab draws a radar of six categories from your last 10, 25, or 50 online
+matches (pick with the buttons; matches you left are skipped), with the window before it
+drawn in grey for comparison. Each score is the share of the other players in those
+lobbies you out-did on that measure, averaged over matches, so 50 is the middle of the
+lobbies you play in and 100 means you led every one. Your team's measures are scored
+against the other team.
+
+| Category | Made up of | Source |
+|---|---|---|
+| Mechanics & recoveries | aerial touches / min, average hit speed, hard hits / min; your team's time to win the ball back | measured; the last is an estimate |
+| Positioning & rotations | how close your share of team touches is to an even split; team possession | estimates |
+| Challenge selection | 50/50s won, 50/50s lost in your own third | estimates |
+| Boost efficiency | time on empty, boost used while already supersonic (from saved replays) | measured |
+| Shooting accuracy | goals per shot | measured |
+| Defensive consistency | saves / min, your team's saves over the other team's shots | measured |
+
+**Measured** means counted by the game (scoreboard, touches, hit speeds) or read exactly
+from a saved replay. **Estimates** (≈) are worked out from touch timing and ball
+positions, since the Stats API doesn't report where cars are or when they recover; each
+item's tooltip says what it stands in for. On the radar, measured categories have filled
+points, estimated ones hollow points, and mixed ones half-filled. Each category also
+shows how it moved against the window before (only when the change is bigger than
+match-to-match variation, with at least 5 matches on each side) and a line of its score
+over the window. Boost efficiency needs saved replays (auto-save in settings).
 
 ## Replays: exact boost and watching goals
 
@@ -347,7 +375,8 @@ src/report.ts     renders the match report; section and column catalogues
 src/names.ts      playlist, arena, and platform names
 src/session.ts    session (worked out from the archive), settings, saved data
 src/consistency.ts  trends in your own play across games and sessions
-src/*.test.ts     Vitest tests (session, match tracking, consistency, HUD, hotkeys, MMR)
+src/skills.ts     skill radar scores, each against the rest of the lobby
+src/*.test.ts     Vitest tests (session, match tracking, consistency, skills, HUD, hotkeys, MMR)
 src/hud.ts        compact HUD and its stat catalogue
 src/boost.ts      boost used/collected from readings
 src/mmr.ts        your MMR history and the shared MMR client

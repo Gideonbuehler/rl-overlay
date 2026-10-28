@@ -15,6 +15,7 @@ import { setSpeedUnit, type SpeedUnit } from "./units";
 import { DEFAULT_SERVER_URL, SharedMmr, latestReading, logIsLocal, matchMmr, newShareToken, readingTime, utcAt, type MmrReading } from "./mmr";
 import { COLUMNS, DEFAULT_TABS, NEW_TABS, TABS, ZONES_COLUMN, overrideKey, renderReport, type ReportEntry, type ReportView } from "./report";
 import { analyse, type Consistency } from "./consistency";
+import { matchSkills, skillProfile, type MatchSkills } from "./skills";
 import {
   ARCHIVE_LIMIT,
   computeSession,
@@ -90,11 +91,14 @@ const archive = loadArchive();
 
 /** How your play has changed over this session and others; recomputed with the session. */
 let consistency: Consistency = analyse([], 0);
+/** Every counted match scored against its lobby, newest first, for the skill radar. */
+let skillMatches: MatchSkills[] = [];
 
 /** Recomputes the session from the matches since it started. */
 function refreshSession() {
   session = computeSession(archive, sessionStart, readings);
   consistency = analyse(archive, sessionStart);
+  skillMatches = matchSkills(archive);
 }
 
 /** When Rocket League was last opened (a restart within 5 minutes doesn't count), or 0. */
@@ -944,6 +948,7 @@ function renderNow() {
         shared: (id) => sharedMmr.get(id),
         notice,
         consistency,
+        skills: skillProfile(skillMatches, settings.skillWindow),
       },
       view,
     );
@@ -1724,6 +1729,12 @@ $("report").addEventListener("pointerdown", (e) => {
     const { [clear.dataset.clearOverride!]: _, ...rest } = settings.trackerOverrides;
     updateSettings({ trackerOverrides: rest });
     lastEmbed = "";
+    renderNow();
+    return;
+  }
+  const win = target.closest<HTMLElement>("[data-skill-window]");
+  if (win) {
+    updateSettings({ skillWindow: Number(win.dataset.skillWindow) });
     renderNow();
     return;
   }
