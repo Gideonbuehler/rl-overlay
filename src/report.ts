@@ -209,6 +209,8 @@ interface Column {
   format?: (v: number) => string;
   /** How the team row combines players. */
   team: (ps: PlayerLine[]) => number | null;
+  /** First place is the lowest value, not the highest. */
+  lowerIsBetter?: boolean;
 }
 
 export const COLUMNS: Column[] = [
@@ -231,7 +233,7 @@ export const COLUMNS: Column[] = [
     get title() { return `Touches that sent the ball off at ${speed(HARD_HIT)} km/h or more`; }, value: (p) => p.hardHits, team: (ps) => sum(ps, (p) => p.hardHits) },
   { id: "bumps", group: "Physical", label: "Bumps", title: "Car-to-car contacts", value: (p) => p.bumps, team: (ps) => sum(ps, (p) => p.bumps) },
   { id: "demos", group: "Physical", label: "Demos", title: "Demolitions inflicted", value: (p) => p.demos, team: (ps) => sum(ps, (p) => p.demos) },
-  { id: "demoed", group: "Physical", label: "Demoed", title: "Times demolished", value: (p) => p.demoed, team: (ps) => sum(ps, (p) => p.demoed) },
+  { id: "demoed", group: "Physical", label: "Demoed", title: "Times demolished", value: (p) => p.demoed, team: (ps) => sum(ps, (p) => p.demoed), lowerIsBetter: true },
 ];
 /** The zone split isn't a number column but can be toggled like one. */
 export const ZONES_COLUMN = { id: "zones", group: "Position", label: "Def · Mid · Att %" };
@@ -248,7 +250,7 @@ function zoneBar(thirds: [number, number, number]): string {
     </td>`;
 }
 
-/** A header row naming each run of columns from the same group. */
+/** A header row naming each run of columns from the same group, with the key to first place. */
 function groupRow(groups: string[], lead = 1): string {
   const runs: [string, number][] = [];
   for (const g of groups) {
@@ -256,7 +258,26 @@ function groupRow(groups: string[], lead = 1): string {
     if (last && last[0] === g) last[1]++;
     else runs.push([g, 1]);
   }
-  return `<tr class="groups"><th colspan="${lead}"></th>${runs.map(([g, n]) => `<th colspan="${n}"><span>${g}</span></th>`).join("")}</tr>`;
+  return `<tr class="groups"><th colspan="${lead}" class="lead-key">1st in lobby</th>${runs.map(([g, n]) => `<th colspan="${n}"><span>${g}</span></th>`).join("")}</tr>`;
+}
+
+/** " gs" on a column that starts a group, so a line can mark where each group begins. */
+const groupStart = (groups: string[], i: number) => (i > 0 && groups[i] !== groups[i - 1] ? " gs" : "");
+
+/**
+ * First place in each column: the highest value, or the lowest where less is
+ * better, then only when one player has it (everyone on 0 demos taken isn't news).
+ */
+function firstPlace<T>(cols: { value: (p: T) => number; lowerIsBetter?: boolean }[], players: T[]): (number | null)[] {
+  return cols.map((c) => {
+    const values = players.map(c.value);
+    if (!c.lowerIsBetter) {
+      const top = Math.max(0, ...values);
+      return top > 0 ? top : null;
+    }
+    const low = Math.min(...values);
+    return values.filter((v) => v === low).length === 1 ? low : null;
+  });
 }
 
 /** A small MMR tag for a player in a match. */
@@ -289,17 +310,18 @@ function breakdown(r: MatchRecord, columnIds: string[], o: ReportOptions): strin
   const cols = COLUMNS.filter((c) => columnIds.includes(c.id));
   const zones = columnIds.includes(ZONES_COLUMN.id);
 
-  const leaders = cols.map((c) => Math.max(0, ...players.map(c.value)));
+  const leaders = firstPlace(cols, players);
   const groups = [...cols.map((c) => c.group), ...(zones ? [ZONES_COLUMN.group] : [])];
-  const head = `${groupRow(groups)}<tr class="cols"><th></th>${cols.map((c) => `<th title="${c.title}">${c.label}</th>`).join("")}${
-    zones ? `<th title="Share of touches in each third of the field">${ZONES_COLUMN.label}</th>` : ""}</tr>`;
+  const gs = (i: number) => groupStart(groups, i);
+  const head = `${groupRow(groups)}<tr class="cols"><th></th>${cols.map((c, i) => `<th class="${gs(i)}" title="${c.title}">${c.label}</th>`).join("")}${
+    zones ? `<th class="${gs(cols.length)}" title="Share of touches in each third of the field">${ZONES_COLUMN.label}</th>` : ""}</tr>`;
 
   const teamBlock = (team: 0 | 1) => {
     const members = teamOf(r, team).sort((a, b) => b.touches - a.touches);
     const teamThirds = [0, 1, 2].map((i) => sum(members, (p) => p.thirds[i])) as [number, number, number];
-    const totals = cols.map((c) => {
+    const totals = cols.map((c, i) => {
       const v = members.length ? c.team(members) : null;
-      return `<td>${v === null ? "" : c.format ? c.format(v) : v}</td>`;
+      return `<td class="${gs(i)}">${v === null ? "" : c.format ? c.format(v) : v}</td>`;
     }).join("");
 
     const rows = members.map((p) => {
@@ -309,8 +331,8 @@ function breakdown(r: MatchRecord, columnIds: string[], o: ReportOptions): strin
         .join(" · ");
       const cells = cols.map((c, i) => {
         const v = c.value(p);
-        const lead = v > 0 && v === leaders[i] ? " lead" : "";
-        return `<td class="num${lead}">${c.format ? c.format(v) : v}</td>`;
+        const lead = v === leaders[i] ? " lead" : "";
+        return `<td class="num${lead}${gs(i)}">${c.format ? c.format(v) : v}</td>`;
       }).join("");
       return `
         <tr class="player ${p.name === r.meName ? "me" : ""} ${p.left ? "gone" : ""}">
@@ -339,6 +361,8 @@ interface BoostColumn {
   group: string;
   value: (p: PlayerBoost) => number;
   format?: (v: number) => string;
+  /** First place is the lowest value, not the highest. */
+  lowerIsBetter?: boolean;
 }
 
 const perMin = (p: PlayerBoost) => (p.time ? (p.used / p.time) * 60 : 0);
@@ -353,7 +377,7 @@ const BOOST_COLUMNS: BoostColumn[] = [
   { group: "Collection", label: "Small", title: "Small pads (12)", value: (p) => p.smallPads },
   { group: "Collection", label: "Stolen", title: "Boost collected in the opponent's half", value: (p) => p.stolen, format: round },
   { group: "Level", label: "Avg", title: "Average boost level", value: (p) => (p.time ? p.levelSum / p.time : 0), format: round },
-  { group: "Level", label: "At 0", title: "Share of time on empty", value: (p) => (p.time ? p.empty / p.time : 0), format: share },
+  { group: "Level", label: "At 0", title: "Share of time on empty", value: (p) => (p.time ? p.empty / p.time : 0), format: share, lowerIsBetter: true },
   { group: "Level", label: "At 100", title: "Share of time full", value: (p) => (p.time ? p.full / p.time : 0), format: share },
 ];
 
@@ -388,20 +412,22 @@ function boostSection(r: MatchRecord): string {
     );
   }
 
-  const leaders = BOOST_COLUMNS.map((c) => Math.max(0, ...exact.map(c.value)));
-  const head = `${groupRow(BOOST_COLUMNS.map((c) => c.group))}<tr class="cols"><th></th>${BOOST_COLUMNS.map((c) => `<th title="${c.title}">${c.label}</th>`).join("")}</tr>`;
+  const leaders = firstPlace(BOOST_COLUMNS, exact);
+  const groups = BOOST_COLUMNS.map((c) => c.group);
+  const gs = (i: number) => groupStart(groups, i);
+  const head = `${groupRow(groups)}<tr class="cols"><th></th>${BOOST_COLUMNS.map((c, i) => `<th class="${gs(i)}" title="${c.title}">${c.label}</th>`).join("")}</tr>`;
   const teamBlock = (team: 0 | 1) => {
     const members = exact.filter((p) => p.team === team).sort((a, b) => b.used - a.used);
     const rows = members.map((p) => {
       const cells = BOOST_COLUMNS.map((c, i) => {
         const v = c.value(p);
-        const lead = v > 0 && v === leaders[i] ? " lead" : "";
-        return `<td class="num${lead}">${c.format ? c.format(v) : v}</td>`;
+        const lead = v === leaders[i] ? " lead" : "";
+        return `<td class="num${lead}${gs(i)}">${c.format ? c.format(v) : v}</td>`;
       }).join("");
       return `<tr class="player ${p.name === r.meName ? "me" : ""}"><td class="who"><div class="who-line">${nameLink(p.name, r.players[p.name]?.primaryId)}${playerTags(r, p.name, false)}</div></td>${cells}</tr>`;
     }).join("");
-    const totals = BOOST_COLUMNS.map((c) =>
-      c.format === share || c.label === "Avg" || c.label === "Per min" ? "<td></td>" : `<td>${(c.format ?? String)(sum(members, c.value))}</td>`,
+    const totals = BOOST_COLUMNS.map((c, i) =>
+      c.format === share || c.label === "Avg" || c.label === "Per min" ? `<td class="${gs(i)}"></td>` : `<td class="${gs(i)}">${(c.format ?? String)(sum(members, c.value))}</td>`,
     ).join("");
     return `<tbody style="--team:${r.teams[team].color}">
       <tr class="team-row"><td class="who"><span class="team-chip"></span>${esc(r.teams[team].name)}</td>${totals}</tr>${rows}</tbody>`;
@@ -775,7 +801,14 @@ function yourGame(r: MatchRecord): string {
     const better = values.filter((v) => (st.lowerIsBetter ? v < mine : v > mine)).length;
     const place = better + 1;
     const top = place === 1 && values.length > 1;
-    return `<div class="yg-stat ${top ? "top" : ""}"><b>${st.fmt(mine)}</b><span>${st.label}</span><em>${top ? "Best in lobby" : `${ordinal(place)} of ${values.length}`}</em></div>`;
+    const tied = values.filter((v) => v === mine).length > 1;
+    // Who came first, when it wasn't you.
+    const best = st.lowerIsBetter ? Math.min(...values) : Math.max(...values);
+    const firsts = players.filter((p) => st.value(p) === best).map((p) => esc(p.name)).join(", ");
+    const placed = top
+      ? tied ? "Tied best in lobby" : "Best in lobby"
+      : `${ordinal(place)} of ${values.length}<span class="yg-first"> · 1st <span class="who">${firsts}</span> ${st.fmt(best)}</span>`;
+    return `<div class="yg-stat ${top ? "top" : ""}"><b>${st.fmt(mine)}</b><span>${st.label}</span><em>${placed}</em></div>`;
   }).join("");
   return card("Your game", `<div class="yg-grid">${tiles}</div>`);
 }

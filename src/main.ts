@@ -8,7 +8,7 @@ import "./style.css";
 import { BoostTracker, emptyBoost } from "./boost";
 import { connect, speedKmh, type Envelope, type Feed, type Status } from "./feed";
 import { hotkeyFrom, hotkeyProblem, isModifierKey, matchesHotkey } from "./hotkeys";
-import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, layoutHud, moveHudStat, renderHud, type HudLayout } from "./hud";
+import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, dropHudStat, layoutHud, pushedBy, renderHud, type HudDrop, type HudLayout } from "./hud";
 import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type PlayerBoost } from "./match";
 import { trackerCandidates } from "./names";
 import { setSpeedUnit, type SpeedUnit } from "./units";
@@ -131,7 +131,7 @@ let tileDrag: {
   ghost: HTMLElement | null;
   /** Outlines where the stat would land. */
   marker: HTMLElement | null;
-  target: { row: number; col: number } | null;
+  target: HudDrop | null;
   /** Removes the drag's pointer listeners. */
   stop: AbortController;
 } | null = null;
@@ -1135,7 +1135,7 @@ $("hud").addEventListener("pointerdown", (down) => {
     }
     drag.ghost!.style.left = `${e.clientX - grab.x}px`;
     drag.ghost!.style.top = `${e.clientY - grab.y}px`;
-    drag.target = hudCellAt(e.clientX, e.clientY);
+    drag.target = hudDropAt(e.clientX, e.clientY, drag.tile.dataset.stat!);
     showDropTarget(drag);
   }, { signal: stop.signal });
   hud.addEventListener("pointerup", () => finishTileDrag(drag), { signal: stop.signal });
@@ -1183,36 +1183,53 @@ function bandAt(bands: [number, number][], v: number): number {
   return bands.length;
 }
 
-/** The cell under a point on screen; -1 or one past the end means just outside that edge. */
-function hudCellAt(x: number, y: number) {
+/**
+ * Where a stat dropped at this point on screen would go. Over another stat it
+ * goes in beside it, on whichever of that stat's sides is nearest; just
+ * outside the HUD, into a new row or column there.
+ */
+function hudDropAt(x: number, y: number, id: string): HudDrop {
   const hud = $("hud");
   const scale = settings.hudScale / 100;
   const box = hud.getBoundingClientRect();
+  const px = (x - box.left) / scale - hud.clientLeft;
+  const py = (y - box.top) / scale - hud.clientTop;
   const { cols, rows } = hudBands();
-  return {
-    row: bandAt(rows, (y - box.top) / scale - hud.clientTop),
-    col: bandAt(cols, (x - box.left) / scale - hud.clientLeft),
-  };
+  const row = bandAt(rows, py);
+  const col = bandAt(cols, px);
+  if (row < 0 || row >= rows.length || col < 0 || col >= cols.length) return { row, col };
+  const cells = hudCells();
+  const there = Object.keys(cells).find((k) => cells[k].row === row && cells[k].col === col);
+  // An empty cell, or back where it came from.
+  if (!there || there === id) return { row, col };
+  const fx = (px - cols[col][0]) / (cols[col][1] - cols[col][0]);
+  const fy = (py - rows[row][0]) / (rows[row][1] - rows[row][0]);
+  if (Math.min(fx, 1 - fx) <= Math.min(fy, 1 - fy)) return { row, col: fx < 0.5 ? col : col + 1, push: "right" };
+  return { row: fy < 0.5 ? row : row + 1, col, push: "down" };
 }
 
 /**
- * Shows where the stat would land: the cell itself, or for a new row or column
- * a bar along that edge (drawn inside the HUD, so it shows even at the screen's edge).
+ * Shows where the stat would land: an empty cell outlined, or a bar where it
+ * goes in between stats or starts a new row or column (drawn inside the HUD,
+ * so it shows even at the screen's edge).
  */
 function showDropTarget(drag: NonNullable<typeof tileDrag>) {
   const { marker, target } = drag;
   if (!marker || !target) return;
   const { cols, rows } = hudBands();
   const BAR = 4;
-  const span = (bands: [number, number][], i: number): [number, number] => {
-    if (i < 0) return [bands[0][0] - BAR - 2, bands[0][0] - 2];
-    if (i >= bands.length) return [bands[bands.length - 1][1] + 2, bands[bands.length - 1][1] + BAR + 2];
-    return bands[i];
+  // The line before band i: in the gap between two, or just outside the first or last.
+  const line = (bands: [number, number][], i: number): [number, number] => {
+    const at = i <= 0 ? bands[0][0] - BAR / 2 - 3
+      : i >= bands.length ? bands[bands.length - 1][1] + BAR / 2 + 3
+      : (bands[i - 1][1] + bands[i][0]) / 2;
+    return [at - BAR / 2, at + BAR / 2];
   };
-  const [left, right] = span(cols, target.col);
-  const [top, bottom] = span(rows, target.row);
-  const edge = target.row < 0 || target.row >= rows.length || target.col < 0 || target.col >= cols.length;
-  marker.classList.toggle("edge", edge);
+  const cell = (bands: [number, number][], i: number) => (i >= 0 && i < bands.length ? bands[i] : line(bands, i < 0 ? 0 : i));
+  const [left, right] = target.push === "right" ? line(cols, target.col) : cell(cols, target.col);
+  const [top, bottom] = target.push === "down" ? line(rows, target.row) : cell(rows, target.row);
+  const inGrid = target.row >= 0 && target.row < rows.length && target.col >= 0 && target.col < cols.length;
+  marker.classList.toggle("edge", !!target.push || !inGrid);
   Object.assign(marker.style, { left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${bottom - top}px` });
 }
 
@@ -1229,23 +1246,29 @@ function finishTileDrag(drag: NonNullable<typeof tileDrag>) {
   endTileDrag(drag);
   const id = drag.tile.dataset.stat!;
   const cells = hudCells();
-  const from = cells[id];
   const to = drag.target;
-  if (!from || !to || (to.row === from.row && to.col === from.col)) {
+  const moved = to && dropHudStat(cells, id, to);
+  if (!moved || Object.keys(cells).every((k) => moved[k].row === cells[k].row && moved[k].col === cells[k].col)) {
     renderNow();
     return;
   }
-  // The other stats stay where they are on screen, even when the grid grows
-  // on its left or top: the HUD moves by however far they would shift.
-  const anchor = Object.keys(cells).find((s) => s !== id);
-  const at = (s: string) => $("hud").querySelector(`[data-stat="${s}"]`)?.getBoundingClientRect();
-  const before = anchor ? at(anchor) : undefined;
-  updateSettings({ hudCells: moveHudStat(cells, id, to.row, to.col), hudLayout: "custom" });
+  // The leftmost and topmost stats that weren't pushed aside stay where they
+  // are on screen, even as the grid grows or closes up on its left or top:
+  // the HUD moves by however far they would shift.
+  const pushed = pushedBy(cells, id, to);
+  const still = Object.keys(cells).filter((s) => s !== id && !pushed.includes(s));
+  const first = (a: "row" | "col", b: "row" | "col") => [...still].sort((p, q) => cells[p][a] - cells[q][a] || cells[p][b] - cells[q][b])[0];
+  const [xAnchor, yAnchor] = [first("col", "row"), first("row", "col")];
+  const at = (s: string | undefined) => (s ? $("hud").querySelector(`[data-stat="${s}"]`)?.getBoundingClientRect() : undefined);
+  const [x0, y0] = [at(xAnchor), at(yAnchor)];
+  updateSettings({ hudCells: moved, hudLayout: "custom" });
   renderNow();
-  const after = anchor ? at(anchor) : undefined;
-  if (before && after && (before.left !== after.left || before.top !== after.top)) {
+  const [x1, y1] = [at(xAnchor), at(yAnchor)];
+  const dx = x0 && x1 ? x0.left - x1.left : 0;
+  const dy = y0 && y1 ? y0.top - y1.top : 0;
+  if (dx || dy) {
     const box = $("hud").getBoundingClientRect();
-    updateSettings({ hudPos: { x: (box.left + before.left - after.left) / innerWidth, y: (box.top + before.top - after.top) / innerHeight } });
+    updateSettings({ hudPos: { x: (box.left + dx) / innerWidth, y: (box.top + dy) / innerHeight } });
     renderNow();
   }
 }
