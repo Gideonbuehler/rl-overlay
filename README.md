@@ -30,9 +30,11 @@ settings runs out).
   tick in settings (total boost used this session, boost per match and per minute,
   touch share, hit speeds, possession, kickoffs won, session record, and more). Stats
   are colour-coded by group (orange boost, yellow you, your team colour for the match,
-  magenta session), with good and bad values in cyan and red. Show them in two columns
-  or in one row across (settings > HUD > Layout). Drag it anywhere while settings are
-  open, and set its size there.
+  magenta session), with good and bad values in cyan and red. Arrange them how you like
+  while settings are open: drag a stat onto an empty spot, onto another stat to swap
+  them, or just past an edge to start a new row or column (the rest stay where they are
+  on screen). The yellow tab above the HUD moves the whole thing. Settings > HUD has two
+  columns, one row, and one column ready-made, and the HUD's size.
 - **Alt+Shift+S** shows or hides the report at any time. Mid-match it shows live
   numbers. Change the hotkey in settings; it is global, so pick something no other
   app needs.

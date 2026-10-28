@@ -105,8 +105,14 @@
           <select id="hud-layout">
             <option value="columns">Two columns</option>
             <option value="row">One row</option>
+            <option value="column">One column</option>
+            <option value="custom" disabled>Custom</option>
           </select>
         </label>
+        <p class="muted">
+          Or arrange the HUD yourself: drag a stat onto an empty spot, onto another stat to swap
+          them, or just past an edge to start a new row or column. The yellow tab moves the whole HUD.
+        </p>
         <label>
           Size <span id="hud-scale-value"></span>
           <input type="range" id="hud-scale" min="70" max="180" step="10" />
