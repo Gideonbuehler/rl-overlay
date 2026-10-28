@@ -13,6 +13,7 @@ import {
   type PlayerLine,
 } from "./match";
 import { arenaName, isAnonymised, playlistName, platformName, trackerCandidates, type TrackerOverride } from "./names";
+import { WINDOWS, categorySource, type CategoryProfile, type SkillProfile } from "./skills";
 import { LOSS_RUN, METRICS, RECENT_GAMES, changesSentence, fmtValue, type Comparison, type Consistency, type GameLine } from "./consistency";
 import type { Session } from "./session";
 import { latestReading, signed, type MmrReading, type SharedPlayer } from "./mmr";
@@ -51,6 +52,8 @@ export interface ReportOptions {
   notice?: string;
   /** How your play has changed across sessions (see consistency.ts). */
   consistency?: Consistency;
+  /** Your skill profile over the chosen window of matches (see skills.ts). */
+  skills?: SkillProfile;
 }
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -1002,6 +1005,105 @@ function breakNote(o: ReportOptions): string {
     <b>Last ${RECENT_GAMES} games:</b> ${what}. A short break could help.${open ? `<span class="go">Details</span>` : ""}</${open ? "button" : "div"}>`;
 }
 
+// ---------- skills ----------
+
+const SOURCE_LABEL = { measured: "Measured", estimate: "Estimate", mixed: "Partly estimated" };
+
+/** A vertex marker: filled when measured, hollow when estimated, half and half when mixed. */
+function marker(kind: keyof typeof SOURCE_LABEL, x: number, y: number, r = 4.5): string {
+  const at = `cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}"`;
+  if (kind === "measured") return `<circle class="sk-dot" ${at}/>`;
+  if (kind === "estimate") return `<circle class="sk-dot hollow" ${at}/>`;
+  return `<circle class="sk-dot hollow" ${at}/><path class="sk-half" d="M ${x - r} ${y} A ${r} ${r} 0 0 0 ${x + r} ${y} Z"/>`;
+}
+
+function radar(p: SkillProfile): string {
+  const W = 400, H = 372, cx = W / 2, cy = H / 2 + 6, R = 128;
+  const n = p.categories.length;
+  const angle = (i: number) => -Math.PI / 2 + (i * 2 * Math.PI) / n;
+  const at = (i: number, v: number) => [cx + Math.cos(angle(i)) * R * (v / 100), cy + Math.sin(angle(i)) * R * (v / 100)];
+  const ring = (v: number) => p.categories.map((_, i) => at(i, v).map((c) => c.toFixed(1)).join(",")).join(" ");
+  const shape = (pick: (c: CategoryProfile) => number | null, cls: string) => {
+    const pts = p.categories.flatMap((c, i) => { const v = pick(c); return v === null ? [] : [at(i, v).map((x) => x.toFixed(1)).join(",")]; });
+    return pts.length >= 3 ? `<polygon class="${cls}" points="${pts.join(" ")}"/>` : "";
+  };
+
+  const grid = [25, 50, 75, 100].map((v) => `<polygon class="sk-ring ${v === 50 ? "mid" : ""}" points="${ring(v)}"/>`).join("")
+    + p.categories.map((_, i) => { const [x, y] = at(i, 100); return `<line class="sk-axis" x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join("")
+    + [50, 100].map((v) => `<text class="sk-tick" x="${cx + 4}" y="${cy - R * (v / 100) + 11}">${v}</text>`).join("");
+  const labels = p.categories.map((c, i) => {
+    const [x, y] = at(i, 100);
+    const dx = Math.cos(angle(i)), dy = Math.sin(angle(i));
+    const lx = x + dx * 16, ly = y + dy * 16 + (dy < -0.5 ? -22 : dy > 0.5 ? 6 : -8);
+    const anchor = Math.abs(dx) < 0.2 ? "middle" : dx > 0 ? "start" : "end";
+    const value = c.now.value === null ? "–" : Math.round(c.now.value);
+    return `<text class="sk-label" x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}">
+      <tspan class="name" x="${lx.toFixed(1)}">${c.category.short}</tspan>
+      <tspan class="value" x="${lx.toFixed(1)}" dy="17">${value}</tspan>
+      <tspan class="src" dx="5">${SOURCE_LABEL[categorySource(c.category)].toLowerCase()}</tspan>
+    </text>`;
+  }).join("");
+  const dots = p.categories.map((c, i) => {
+    if (c.now.value === null) return "";
+    const [x, y] = at(i, c.now.value);
+    return `<g><title>${c.category.label}: ${Math.round(c.now.value)} over ${c.now.n} matches</title>${marker(categorySource(c.category), x, y)}</g>`;
+  }).join("");
+  return `<svg class="sk-radar" viewBox="0 0 ${W} ${H}" role="img" aria-label="Skill radar">
+    ${grid}${shape((c) => c.before.value, "sk-before")}${shape((c) => c.now.value, "sk-now")}${dots}${labels}
+  </svg>`;
+}
+
+/** This window's per-match scores as a small line, with the lobby middle marked. */
+function trailLine(points: number[]): string {
+  if (points.length < 2) return `<span class="sk-trail none"></span>`;
+  const W = 84, H = 22;
+  const xy = points.map((v, i) => `${((i / (points.length - 1)) * W).toFixed(1)},${(H - (v / 100) * H).toFixed(1)}`).join(" ");
+  return `<svg class="sk-trail" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}"/><polyline points="${xy}"/></svg>`;
+}
+
+function skillChange(c: CategoryProfile): string {
+  if (c.change === null) return `<span class="c-note" title="Needs 5 matches in this window and the one before">–</span>`;
+  if (c.change === 0) return `<span class="c-note" title="Within normal match-to-match variation">steady</span>`;
+  return `<span class="c-change ${c.change > 0 ? "better" : "worse"}">${c.change > 0 ? "▲" : "▼"} ${Math.round(Math.abs(c.change))}</span>`;
+}
+
+function skillsTab(_r: MatchRecord, o: ReportOptions): string {
+  const p = o.skills;
+  if (!p || !p.matches) return `<div class="tab-grid boost-empty">${card("Skill radar", `<p class="muted">Your profile builds from your online matches. Play one through to start it.</p>`)}</div>`;
+  const windows = WINDOWS.map((n) => `<button class="sk-win ${n === p.size ? "on" : ""}" data-skill-window="${n}" tabindex="-1">${n}</button>`).join("");
+  const day = p.since ? dayLabel(p.since) : "";
+  const since = day ? ` · since ${/^(Today|Yesterday)$/.test(day) ? day.toLowerCase() : day}` : "";
+  const legend = `
+    <div class="sk-legend">
+      <span><i class="sw now"></i>Last ${p.matches}</span>
+      ${p.previous ? `<span><i class="sw before"></i>The ${p.previous} before</span>` : ""}
+      <span><svg viewBox="0 0 12 12">${marker("measured", 6, 6)}</svg>Measured</span>
+      <span><svg viewBox="0 0 12 12">${marker("mixed", 6, 6)}</svg>Partly estimated</span>
+      <span><svg viewBox="0 0 12 12">${marker("estimate", 6, 6)}</svg>Estimate</span>
+    </div>`;
+  const left = card("Skill radar", `
+    <div class="sk-head"><span>Last ${p.matches}${p.matches < p.size ? ` of ${p.size}` : ""} matches${since}</span><span class="sk-wins">${windows}</span></div>
+    ${radar(p)}${legend}`);
+
+  const rows = p.categories.map((c) => {
+    const kind = categorySource(c.category);
+    const parts = c.inputs.map(({ input, now }) =>
+      `<span class="${now.value === null ? "none" : ""}" title="${esc(input.about)}">${input.source === "estimate" ? "≈ " : ""}${input.label} <b>${now.value === null ? "–" : Math.round(now.value)}</b></span>`).join("");
+    return `
+      <div class="sk-row">
+        <svg class="sk-mark" viewBox="0 0 12 12">${marker(kind, 6, 6)}</svg>
+        <div class="sk-name"><b>${c.category.label}</b><em>${SOURCE_LABEL[kind]}${c.now.n ? ` · ${c.now.n} matches` : ""}</em></div>
+        <span class="sk-score">${c.now.value === null ? "–" : Math.round(c.now.value)}</span>
+        <span class="sk-change">${skillChange(c)}</span>
+        ${trailLine(c.trail)}
+        <div class="sk-inputs">${c.now.value === null ? `<span class="none">${c.category.empty}</span>` : parts}</div>
+      </div>`;
+  }).join("");
+  const right = card("How it's made up", `${rows}
+    <p class="foot">Each score is the share of players in your matches you out-did on that measure, averaged: 50 is the middle of your lobbies, 100 means you led every one. <b>Measured</b> scores come from the game's own counts or a saved replay; <b>≈ estimates</b> are worked out from touch timing and ball positions, since the game doesn't report where cars are. Hover an item for what it stands for.</p>`);
+  return `<div class="tab-grid skills">${left}${right}</div>`;
+}
+
 export interface TabDef {
   id: string;
   label: string;
@@ -1015,10 +1117,11 @@ export const TABS: TabDef[] = [
   { id: "goals", label: "Goals", render: goalsTab },
   { id: "field", label: "Field", render: fieldTab },
   { id: "consistency", label: "Consistency", render: consistencyTab },
+  { id: "skills", label: "Skills", render: skillsTab },
 ];
 export const DEFAULT_TABS = TABS.map((t) => t.id);
 /** Tabs added after the tab list shipped; switched on once for existing setups. */
-export const NEW_TABS = ["consistency"];
+export const NEW_TABS = ["consistency", "skills"];
 
 export function renderReport(
   entries: ReportEntry[],
