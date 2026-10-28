@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@fontsource/oxanium": "^5.3.0",
     "@tauri-apps/api": "^2"
   },
   "devDependencies": {

@@ -1,3 +1,9 @@
+// Bundled, so the overlay looks the same offline.
+import "@fontsource/oxanium/400.css";
+import "@fontsource/oxanium/500.css";
+import "@fontsource/oxanium/600.css";
+import "@fontsource/oxanium/700.css";
+import "@fontsource/oxanium/800.css";
 import "./style.css";
 import { BoostTracker, emptyBoost } from "./boost";
 import { connect, speedKmh, type Envelope, type Feed, type Status } from "./feed";
@@ -849,11 +855,17 @@ function syncTrackerEmbed() {
   invoke("show_tracker", args).catch((e) => console.warn("RL Tracker embed:", e));
 }
 
+/**
+ * A round of a match is being played. Free play and training count as live
+ * from the first touch and never stop, but there's no match there to protect.
+ */
+const inLiveRound = () => boost.live && isRealMatch(tracker.record);
+
 /** Lets the report take clicks when the pointer is over it, but never during a live round. */
 let lastZones = "";
 function syncClickZones() {
   const zones: { x: number; y: number; w: number; h: number }[] = [];
-  if (reportVisible && !away && !boost.live && !calibrating && !replayMode) {
+  if (reportVisible && !away && !inLiveRound() && !calibrating && !replayMode) {
     const r = $("report").getBoundingClientRect();
     const dpr = devicePixelRatio;
     zones.push({ x: Math.round(r.left * dpr), y: Math.round(r.top * dpr), w: Math.round(r.width * dpr), h: Math.round(r.height * dpr) });
@@ -899,7 +911,7 @@ function renderNow() {
         tabs: settings.reportTabs,
         tab: reportTab,
         columns: settings.reportColumns,
-        clicksPaused: boost.live,
+        clicksPaused: inLiveRound(),
         trackerOverrides: settings.trackerOverrides,
         readings,
         mmr: mmrFor,

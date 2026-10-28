@@ -64,9 +64,10 @@ first opens after each match), and pick the player-table columns.
 
 Hold **Ctrl** to click the report; without Ctrl every click goes to the game behind
 it (so Rocket League's post-match buttons always work). It never takes clicks during
-a live round. Clicks act on press, so live updates can't swallow them. When settings
-or the tracker correction box borrow keyboard focus, it goes back to the window that
-had it (usually Rocket League) when you're done.
+a live round of a match (free play and training don't count). Clicks act on press,
+so live updates can't swallow them. When settings or the tracker correction box
+borrow keyboard focus, it goes back to the window that had it (usually Rocket League)
+when you're done.
 
 The overlay shows only while Rocket League is running, and hides while another app is
 in front on its screen, coming back when Rocket League is. Apps on other monitors don't affect it. The game is recognised by
@@ -305,7 +306,7 @@ src/hud.ts        compact HUD and its stat catalogue
 src/boost.ts      boost used/collected from readings
 src/mmr.ts        your MMR history and the shared MMR client
 src/main.ts       match flow, show/hide logic, calibration, settings panel
-src/style.css     overlay styles
+src/style.css     overlay styles: a Cyberpunk-style neon look, colours and shapes as tokens at the top
 src-tauri/        transparent click-through window, global hotkeys, tray
 src-tauri/src/boost.rs    screen capture, OCR, and learned digit shapes for the boost meter
 src-tauri/src/store.rs    saved data as files, shared by every build

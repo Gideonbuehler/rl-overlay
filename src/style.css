@@ -1,6 +1,7 @@
 :root {
-  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  /* Oxanium has equal-width digits, so live numbers don't shift as they change. */
+  --font: "Oxanium", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Oxanium", "Segoe UI", system-ui, sans-serif;
 
   --fs-2xs: 10px;
   --fs-xs: 11px;
@@ -19,24 +20,42 @@
   --space-6: 24px;
   --space-8: 32px;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 20px;
+  /* Night City: hard edges, chamfered corners instead of rounded ones. */
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --cut-sm: 7px;
+  --cut-md: 12px;
+  --cut-lg: 22px;
+  --chamfer-sm: polygon(var(--cut-sm) 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%, 0 var(--cut-sm));
+  --chamfer-md: polygon(var(--cut-md) 0, 100% 0, 100% calc(100% - var(--cut-md)), calc(100% - var(--cut-md)) 100%, 0 100%, 0 var(--cut-md));
+  --chamfer-lg: polygon(var(--cut-lg) 0, 100% 0, 100% calc(100% - var(--cut-lg)), calc(100% - var(--cut-lg)) 100%, 0 100%, 0 var(--cut-lg));
+  /* Strokes along the cut corners, which the border can't follow
+     (0.7071 is how far the 45° cut sits from the corner along the gradient). */
+  --edge-lg: linear-gradient(135deg, transparent calc(var(--cut-lg) * 0.7071), var(--accent) calc(var(--cut-lg) * 0.7071), var(--accent) calc(var(--cut-lg) * 0.7071 + 2px), transparent calc(var(--cut-lg) * 0.7071 + 2px)) top left / 64px 64px no-repeat border-box,
+    linear-gradient(315deg, transparent calc(var(--cut-lg) * 0.7071), var(--cyan) calc(var(--cut-lg) * 0.7071), var(--cyan) calc(var(--cut-lg) * 0.7071 + 2px), transparent calc(var(--cut-lg) * 0.7071 + 2px)) bottom right / 64px 64px no-repeat border-box;
+  --edge-md: linear-gradient(135deg, transparent calc(var(--cut-md) * 0.7071), var(--line-strong) calc(var(--cut-md) * 0.7071), var(--line-strong) calc(var(--cut-md) * 0.7071 + 1px), transparent calc(var(--cut-md) * 0.7071 + 1px)) top left / 40px 40px no-repeat border-box,
+    linear-gradient(315deg, transparent calc(var(--cut-md) * 0.7071), var(--line-strong) calc(var(--cut-md) * 0.7071), var(--line-strong) calc(var(--cut-md) * 0.7071 + 1px), transparent calc(var(--cut-md) * 0.7071 + 1px)) bottom right / 40px 40px no-repeat border-box;
+  --scanlines: repeating-linear-gradient(0deg, rgba(0, 240, 255, 0.025) 0 1px, transparent 1px 4px);
 
-  --panel: rgba(11, 13, 19, 0.93);
-  --panel-raised: rgba(255, 255, 255, 0.04);
-  --panel-solid: rgb(18, 20, 28);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.14);
-  --text: #f2f4f8;
-  --text-dim: rgba(242, 244, 248, 0.78);
-  --muted: rgba(242, 244, 248, 0.5);
-  --accent: #5aa9ff;
-  --win: #4ade80;
-  --loss: #f87171;
-  --gold: #f5c542;
-  --boost: #ffae2e;
+  --panel: rgba(10, 8, 20, 0.93);
+  --panel-raised: rgba(0, 240, 255, 0.035);
+  --panel-solid: rgb(12, 10, 23);
+  --line: rgba(0, 240, 255, 0.13);
+  --line-strong: rgba(0, 240, 255, 0.3);
+  --text: #eefbff;
+  --text-dim: rgba(222, 244, 255, 0.78);
+  --muted: rgba(150, 200, 222, 0.66);
+  --accent: #fcee0a;
+  /* Text on the accent. */
+  --accent-ink: #0b0a10;
+  --cyan: #00f0ff;
+  --magenta: #ff3ec8;
+  --win: var(--cyan);
+  --loss: #ff2d55;
+  --gold: var(--accent);
+  --boost: #ff9e2c;
 
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur: 220ms;
@@ -85,10 +104,9 @@ small {
   transform: translate(-50%, -50%);
   transform-origin: center;
   padding: var(--space-6) var(--space-8) var(--space-4);
-  background: var(--panel);
+  background: var(--edge-lg), var(--scanlines), var(--panel);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-xl);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+  clip-path: var(--chamfer-lg);
   backdrop-filter: blur(14px);
   animation: report-in 260ms var(--ease);
 }
@@ -98,6 +116,31 @@ small {
 @keyframes report-in {
   from {
     opacity: 0;
+  }
+}
+/* Powers on like an old screen: one flicker. */
+@keyframes flicker-in {
+  0% { opacity: 0; }
+  35% { opacity: 0.9; }
+  45% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+/* A short neon glitch when a result appears. */
+@keyframes glitch {
+  0%, 60%, 100% { transform: none; text-shadow: 0 0 18px color-mix(in srgb, currentColor 45%, transparent); }
+  10% { transform: translateX(-2px) skewX(-8deg); text-shadow: 3px 0 var(--magenta), -3px 0 var(--cyan); }
+  20% { transform: translateX(2px); text-shadow: -3px 0 var(--magenta), 3px 0 var(--cyan); }
+  30% { transform: none; text-shadow: 2px 0 var(--magenta), -2px 0 var(--cyan); }
+  45% { transform: translateX(1px) skewX(6deg); text-shadow: -1px 0 var(--magenta), 1px 0 var(--cyan); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  #report,
+  #editor {
+    animation: flicker-in 320ms linear;
+  }
+  .verdict.win,
+  .verdict.loss {
+    animation: glitch 700ms steps(1, end);
   }
 }
 
@@ -116,15 +159,16 @@ small {
 .kicker {
   font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--cyan) 75%, transparent);
 }
 
 .verdict {
-  font: 800 var(--fs-xl) / 1.05 var(--font-display);
-  letter-spacing: -0.01em;
+  font: 800 var(--fs-2xl) / 1 var(--font-display);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  text-shadow: 0 0 18px color-mix(in srgb, currentColor 45%, transparent);
 }
 .verdict.win { color: var(--win); }
 .verdict.loss { color: var(--loss); }
@@ -156,7 +200,7 @@ small {
 .team-goals {
   min-width: 84px;
   padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-lg);
+  clip-path: var(--chamfer-md);
   background: var(--team);
   font: 800 var(--fs-2xl) / 1.1 var(--font-display);
   text-align: center;
@@ -189,17 +233,17 @@ small {
 .pill {
   display: inline-block;
   padding: 1px var(--space-2);
-  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
   font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   vertical-align: middle;
 }
-.pill.gold { background: rgba(245, 197, 66, 0.18); color: var(--gold); }
-.pill.you { background: rgba(90, 169, 255, 0.18); color: var(--accent); }
-.pill.win { background: rgba(74, 222, 128, 0.16); color: var(--win); }
-.pill.loss { background: rgba(248, 113, 113, 0.16); color: var(--loss); }
+.pill.gold { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+.pill.you { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.pill.win { background: color-mix(in srgb, var(--win) 14%, transparent); color: var(--win); }
+.pill.loss { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
 .pill.muted-pill { background: var(--panel-raised); color: var(--muted); }
 
 /* scoreboard */
@@ -246,7 +290,6 @@ small {
 .team-chip {
   width: 10px;
   height: 10px;
-  border-radius: 3px;
   background: var(--team);
 }
 .team-score {
@@ -267,7 +310,7 @@ small {
   font-weight: 700;
 }
 .player.me td {
-  background: rgba(90, 169, 255, 0.07);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
 }
 .player.me td.who {
   box-shadow: inset 3px 0 0 var(--accent);
@@ -339,21 +382,25 @@ small {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-5);
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   color: var(--muted);
-  font: 600 var(--fs-sm) var(--font);
+  font: 600 var(--fs-xs) var(--font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
   cursor: pointer;
 }
 .r-tab:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
 }
 .r-tab.on {
-  color: var(--text);
+  color: var(--accent-ink);
+  background: var(--accent);
   border-bottom-color: var(--accent);
 }
 .r-tab .has-replay {
@@ -412,13 +459,13 @@ small {
   display: flex;
   flex-direction: column;
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.03);
+  clip-path: var(--chamfer-sm);
+  background: var(--panel-raised);
   box-shadow: inset 3px 0 0 var(--line-strong);
 }
 .yg-stat.top {
   box-shadow: inset 3px 0 0 var(--gold);
-  background: rgba(245, 197, 66, 0.07);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
 }
 .yg-stat b {
   font: 800 var(--fs-lg) / 1.1 var(--font-display);
@@ -477,14 +524,14 @@ small {
 }
 /* MMR tags next to names, and the strip on the player screen */
 .pill.mmr {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text-dim);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 .pill.mmr.shared {
-  background: rgba(90, 169, 255, 0.14);
-  color: var(--accent);
+  background: color-mix(in srgb, var(--cyan) 14%, transparent);
+  color: var(--cyan);
 }
 .mini.up b { color: var(--win); }
 .mini.down b { color: var(--loss); }
@@ -540,9 +587,17 @@ body.away #calib-bar {
   margin: 0 0 var(--space-2);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--cyan) 70%, transparent);
+}
+.block > h3::before,
+.card > h3::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
 }
 .block > h3::after {
   content: "";
@@ -623,7 +678,7 @@ body.away #calib-bar {
   border-radius: var(--radius-sm);
 }
 .goals li.watch:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
 }
 .watch-hint {
   margin-top: var(--space-2) !important;
@@ -641,17 +696,17 @@ body.away #calib-bar {
 
 .card {
   padding: var(--space-4) var(--space-5);
-  background: var(--panel-raised);
+  background: var(--edge-md), var(--panel-raised);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  clip-path: var(--chamfer-md);
 }
 .card h3 {
   margin: 0 0 var(--space-3);
   font-size: var(--fs-2xs);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--cyan) 70%, transparent);
 }
 .card p {
   margin: 0;
@@ -745,7 +800,6 @@ body.away #calib-bar {
   display: flex;
   height: 4px;
   gap: 2px;
-  border-radius: 2px;
   overflow: hidden;
 }
 .cmp-bar i {
@@ -786,8 +840,8 @@ body.away #calib-bar {
   font-size: var(--fs-xs);
   font-weight: 700;
 }
-.chip.win { background: rgba(74, 222, 128, 0.16); color: var(--win); }
-.chip.loss { background: rgba(248, 113, 113, 0.16); color: var(--loss); }
+.chip.win { background: color-mix(in srgb, var(--win) 14%, transparent); color: var(--win); }
+.chip.loss { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
 .chip sup {
   font-size: 0.7em;
   margin-left: 1px;
@@ -820,7 +874,8 @@ body.away #calib-bar {
   margin-top: var(--space-4);
   text-align: center;
   font-size: var(--fs-2xs);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -854,24 +909,27 @@ body.away #calib-bar {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  padding: 6px var(--space-3);
-  background: rgba(255, 255, 255, 0.06);
+  padding: 6px var(--space-4) 6px var(--space-3);
+  background: color-mix(in srgb, var(--cyan) 7%, transparent);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%);
   color: var(--text);
-  font: 600 var(--fs-sm) var(--font);
+  font: 600 var(--fs-xs) var(--font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: background var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .nav-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--cyan) 16%, transparent);
+  color: var(--cyan);
 }
 .nav-btn .count {
   padding: 0 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--accent);
   font-size: var(--fs-2xs);
-  color: var(--text-dim);
+  font-weight: 700;
+  color: var(--accent-ink);
 }
 /* Line icons drawn in CSS: three bars for the list, a chevron for back. */
 .nav-icon {
@@ -948,7 +1006,7 @@ body.away #calib-bar {
   cursor: pointer;
 }
 .m-row:hover td {
-  background: rgba(255, 255, 255, 0.05);
+  background: color-mix(in srgb, var(--cyan) 7%, transparent);
   color: var(--text);
 }
 .m-time {
@@ -964,15 +1022,15 @@ body.away #calib-bar {
   display: inline-block;
   min-width: 64px;
   padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  box-shadow: inset 2px 0 0 currentColor;
   font-weight: 700;
   font-size: var(--fs-xs);
   color: var(--text);
 }
-.result.win { background: rgba(74, 222, 128, 0.15); color: var(--win); }
-.result.loss { background: rgba(248, 113, 113, 0.15); color: var(--loss); }
-.result.live { background: rgba(90, 169, 255, 0.15); color: var(--accent); }
+.result.win { background: color-mix(in srgb, var(--win) 14%, transparent); color: var(--win); }
+.result.loss { background: color-mix(in srgb, var(--loss) 14%, transparent); color: var(--loss); }
+.result.live { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .board.matches sup {
   margin-left: 2px;
   font-size: 0.65em;
@@ -1019,7 +1077,7 @@ body.away #calib-bar {
 #editor select {
   min-width: 0;
   padding: 5px var(--space-2);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--cyan) 5%, transparent);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -1069,9 +1127,9 @@ body.away #calib-bar {
   display: flex;
   flex-direction: column;
   padding: var(--space-3) var(--space-4);
-  background: var(--panel-raised);
+  background: var(--edge-md), var(--panel-raised);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  clip-path: var(--chamfer-md);
 }
 .p-stat b {
   font: 800 var(--fs-xl) / 1.1 var(--font-display);
@@ -1117,7 +1175,6 @@ body.away #calib-bar {
   display: flex;
   height: 6px;
   gap: 1px;
-  border-radius: 3px;
   overflow: hidden;
   background: var(--line);
 }
@@ -1148,7 +1205,7 @@ body.away #calib-bar {
   height: auto;
 }
 .pitch .field {
-  fill: rgba(255, 255, 255, 0.03);
+  fill: color-mix(in srgb, var(--cyan) 4%, transparent);
   stroke: var(--line-strong);
   stroke-width: 40;
 }
@@ -1229,7 +1286,7 @@ body.away #calib-bar {
   height: auto;
 }
 .mouth .posts {
-  fill: rgba(255, 255, 255, 0.03);
+  fill: color-mix(in srgb, var(--cyan) 4%, transparent);
   stroke: var(--text-dim);
   stroke-width: 30;
 }
@@ -1259,10 +1316,9 @@ body.away #calib-bar {
   grid-template-columns: repeat(2, minmax(104px, auto));
   gap: var(--space-2);
   padding: var(--space-2);
-  background: rgba(7, 9, 14, 0.9);
+  background: var(--scanlines), rgba(8, 7, 16, 0.9);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  clip-path: var(--chamfer-md);
 }
 #hud[hidden] {
   display: none;
@@ -1275,25 +1331,26 @@ body.away #calib-bar {
   flex-direction: column;
   gap: 1px;
   padding: var(--space-2) var(--space-3) var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--group) 18%, transparent), rgba(255, 255, 255, 0.03) 70%);
+  clip-path: var(--chamfer-sm);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--group) 18%, transparent), color-mix(in srgb, var(--cyan) 3%, transparent) 70%);
   box-shadow: inset 3px 0 0 var(--group);
 }
 .hud-stat.g-boost { --group: var(--boost); }
 .hud-stat.g-you { --group: var(--accent); }
-.hud-stat.g-session { --group: var(--win); }
+.hud-stat.g-session { --group: var(--magenta); }
 
 .hud-stat b {
   font: 800 var(--fs-xl) / 1.05 var(--font-display);
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  color: var(--text);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--group) 45%, transparent), 0 1px 3px rgba(0, 0, 0, 0.6);
   font-variant-numeric: tabular-nums;
 }
 .hud-stat span {
-  font-size: var(--fs-xs);
+  font-size: var(--fs-2xs);
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: color-mix(in srgb, var(--group) 55%, #fff);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--group) 60%, #fff);
 }
 .hud-stat.good b { color: var(--win); }
 .hud-stat.bad b { color: var(--loss); }
@@ -1310,6 +1367,8 @@ body.away #calib-bar {
 }
 body.edit #hud {
   cursor: grab;
+  /* The chamfer would clip the outline away. */
+  clip-path: none;
   outline: 1px dashed var(--accent);
   outline-offset: 3px;
 }
@@ -1336,7 +1395,6 @@ body.edit #hud {
   width: 12px;
   height: 12px;
   background: var(--accent);
-  border-radius: 3px;
   cursor: nwse-resize;
 }
 #calib-bar {
@@ -1350,10 +1408,9 @@ body.edit #hud {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
-  background: var(--panel-solid);
+  background: var(--edge-md), var(--scanlines), var(--panel-solid);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  clip-path: var(--chamfer-md);
 }
 #calib-bar p {
   margin: var(--space-1) 0 0;
@@ -1372,7 +1429,7 @@ body.edit #hud {
 /* ---------- settings panel ---------- */
 
 body.edit {
-  background: rgba(0, 0, 0, 0.35);
+  background: radial-gradient(ellipse at center, transparent 35%, color-mix(in srgb, var(--magenta) 10%, transparent)), rgba(0, 0, 0, 0.45);
 }
 
 #editor {
@@ -1388,10 +1445,9 @@ body.edit {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  background: var(--panel-solid);
+  background: var(--edge-lg), var(--scanlines), var(--panel-solid);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  clip-path: var(--chamfer-lg);
   user-select: text;
 }
 #editor[hidden],
@@ -1411,14 +1467,18 @@ body.edit {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  background: var(--panel-solid);
+  background: var(--edge-lg), var(--scanlines), var(--panel-solid);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  clip-path: var(--chamfer-lg);
 }
-#setup h1 {
+#setup h1,
+#editor h1 {
   margin: 0;
-  font-size: var(--fs-lg);
+  font: 800 var(--fs-lg) / 1.1 var(--font-display);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 #setup h2 {
   margin: 0 0 var(--space-2);
@@ -1437,7 +1497,7 @@ body.edit {
 }
 #setup input {
   padding: var(--space-2) var(--space-3);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--cyan) 5%, transparent);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -1449,8 +1509,8 @@ body.edit {
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  box-shadow: inset 2px 0 0 var(--line-strong);
   font-size: var(--fs-sm);
 }
 .install .muted {
@@ -1465,8 +1525,11 @@ body.edit {
   background: var(--accent);
   border: 0;
   border-radius: var(--radius-sm);
-  color: #06121f;
-  font: 600 var(--fs-sm) var(--font);
+  color: var(--accent-ink);
+  font: 700 var(--fs-xs) var(--font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%);
   cursor: pointer;
 }
 .installs p {
@@ -1477,10 +1540,6 @@ body.edit {
    shrink below their content instead and spill over each other. */
 #editor > * {
   flex-shrink: 0;
-}
-#editor h1 {
-  margin: 0;
-  font-size: var(--fs-lg);
 }
 #editor header p {
   margin: var(--space-1) 0 0;
@@ -1505,20 +1564,24 @@ body.edit {
   border-bottom: 1px solid var(--line-strong);
 }
 .tab {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-4);
   background: none;
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   color: var(--muted);
-  font: 600 var(--fs-sm) var(--font);
+  font: 600 var(--fs-xs) var(--font);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
   cursor: pointer;
 }
 .tab:hover {
-  color: var(--text);
+  color: var(--cyan);
 }
 .tab.on {
-  color: var(--text);
+  color: var(--accent-ink);
+  background: var(--accent);
   border-bottom-color: var(--accent);
 }
 .pane {
@@ -1549,8 +1612,8 @@ body.edit {
   align-items: center;
   justify-content: space-between;
   padding: var(--space-1) var(--space-2);
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: var(--radius-sm);
+  background: var(--panel-raised);
+  box-shadow: inset 2px 0 0 var(--line-strong);
 }
 .order-list li.off {
   opacity: 0.55;
@@ -1563,9 +1626,8 @@ body.edit {
   width: 24px;
   height: 22px;
   padding: 0;
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--cyan) 8%, transparent);
   border: 1px solid var(--line);
-  border-radius: 4px;
   color: var(--text);
   cursor: pointer;
 }
@@ -1588,9 +1650,9 @@ body.edit {
   margin: var(--space-2) 0 0;
   font-size: var(--fs-2xs);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: color-mix(in srgb, var(--cyan) 70%, transparent);
 }
 #editor p {
   margin: 0;
@@ -1640,7 +1702,7 @@ button.link {
 }
 #editor input {
   padding: var(--space-2) var(--space-3);
-  background: rgba(255, 255, 255, 0.06);
+  background: color-mix(in srgb, var(--cyan) 5%, transparent);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   color: var(--text);
@@ -1666,23 +1728,30 @@ button.link {
   gap: var(--space-2);
 }
 .actions button {
-  padding: var(--space-2) var(--space-3);
-  background: rgba(255, 255, 255, 0.08);
+  padding: var(--space-2) var(--space-4);
+  background: color-mix(in srgb, var(--cyan) 7%, transparent);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-sm);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--cut-sm)), calc(100% - var(--cut-sm)) 100%, 0 100%);
   color: var(--text);
-  font: 500 var(--fs-sm) var(--font);
+  font: 600 var(--fs-xs) var(--font);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   cursor: pointer;
-  transition: background var(--dur) var(--ease);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .actions button:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--cyan) 16%, transparent);
+  color: var(--cyan);
 }
 .actions button.primary {
   margin-left: auto;
   background: var(--accent);
   border-color: transparent;
-  color: #06121f;
+  color: var(--accent-ink);
+}
+.actions button.primary:hover {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+  color: var(--accent-ink);
 }
 .actions button[hidden] {
   display: none;
