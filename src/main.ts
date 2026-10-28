@@ -7,7 +7,7 @@ import "@fontsource/oxanium/800.css";
 import "./style.css";
 import { BoostTracker, emptyBoost } from "./boost";
 import { connect, speedKmh, type Envelope, type Feed, type Status } from "./feed";
-import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, renderHud } from "./hud";
+import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, layoutHud, moveHudStat, renderHud, type HudLayout } from "./hud";
 import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type PlayerBoost } from "./match";
 import { trackerCandidates } from "./names";
 import { setSpeedUnit, type SpeedUnit } from "./units";
@@ -123,6 +123,17 @@ let reportTab = "overview";
 let lastHit: number | null = null;
 let ballSpeed: number | null = null;
 let inGoalReplay = false;
+/** A stat being dragged to another spot on the HUD, which holds still meanwhile (see renderHudPanel). */
+let tileDrag: {
+  tile: HTMLElement;
+  /** Follows the pointer once it has moved far enough to be a drag, not a click. */
+  ghost: HTMLElement | null;
+  /** Outlines where the stat would land. */
+  marker: HTMLElement | null;
+  target: { row: number; col: number } | null;
+  /** Removes the drag's pointer listeners. */
+  stop: AbortController;
+} | null = null;
 
 /** Boost for the match in progress; readings outside a live match go nowhere. */
 const boost = new BoostTracker(() => {
@@ -937,10 +948,18 @@ function renderNow() {
   syncBoostReader();
 }
 
+/** The stats shown on the HUD, leaving out any this version doesn't have. */
+const shownHudStats = () => settings.hudStats.filter((id) => HUD_STATS.some((s) => s.id === id));
+/** Where each shown stat sits on the HUD. */
+const hudCells = () => layoutHud(shownHudStats(), settings.hudCells, settings.hudLayout);
+
 function renderHudPanel() {
   const hud = $("hud");
   hud.hidden = calibrating || !(settings.hudVisible || editMode);
-  if (hud.hidden) return;
+  // Settings closed mid-drag: the overlay no longer gets the pointer, so the drop never comes.
+  if (tileDrag && !editMode) endTileDrag(tileDrag);
+  // Held still while a stat is dragged; it catches up on the drop.
+  if (hud.hidden || tileDrag) return;
   const live = tracker.record;
   const hasLive = Object.keys(live.players).length > 0;
   const record = hasLive ? live : archive[0] ?? live;
@@ -948,7 +967,8 @@ function renderHudPanel() {
   const booked = live === finished || (!!live.guid && archive.some((a) => a.guid === live.guid));
   const team = record.myTeam ?? 0;
   hud.innerHTML = renderHud(
-    settings.hudStats,
+    shownHudStats(),
+    hudCells(),
     {
       record,
       me: record.meName ? record.players[record.meName] : undefined,
@@ -962,6 +982,7 @@ function renderHudPanel() {
     },
     !!settings.boostRegion || inTauri === false,
     record.teams[team]?.color ?? "#5aa9ff",
+    editMode,
   );
   // Scaled from the top-left corner so the saved position stays put.
   hud.style.transform = `scale(${settings.hudScale / 100})`;
@@ -977,17 +998,25 @@ function lastGameMmr(): number | null {
   return before !== undefined && after !== undefined ? after - before : null;
 }
 
-/** Saved spot, or by default the right edge, below the game's own scoreboard. */
+/**
+ * Saved spot, kept on screen as the HUD changes shape. By default a wide HUD
+ * sits centred just under the game's own scoreboard, any other at the right
+ * edge below it.
+ */
 function placeHud() {
   const hud = $("hud");
+  const { width, height } = hud.getBoundingClientRect();
   const pos = settings.hudPos;
   if (pos) {
-    hud.style.left = `${pos.x * 100}%`;
-    hud.style.top = `${pos.y * 100}%`;
-    return;
+    hud.style.left = `${Math.max(0, Math.min(pos.x * innerWidth, innerWidth - width))}px`;
+    hud.style.top = `${Math.max(0, Math.min(pos.y * innerHeight, innerHeight - height))}px`;
+  } else if (width > height * 2.5) {
+    hud.style.top = "10%";
+    hud.style.left = `${(innerWidth - width) / 2}px`;
+  } else {
+    hud.style.top = "30%";
+    hud.style.left = `${innerWidth * 0.985 - width}px`;
   }
-  hud.style.top = "30%";
-  hud.style.left = `${innerWidth * 0.985 - hud.getBoundingClientRect().width}px`;
 }
 addEventListener("resize", () => !$("hud").hidden && placeHud());
 
@@ -1015,6 +1044,9 @@ function renderEditor() {
   $("status").dataset.status = status;
   $("preview-report").textContent = reportVisible ? "Hide report" : "Show report";
   $<HTMLInputElement>("hud-visible").checked = settings.hudVisible;
+  // Shows "Custom" once stats have been dragged.
+  const layoutSelect = $<HTMLSelectElement>("hud-layout");
+  if (layoutSelect.value !== settings.hudLayout) layoutSelect.value = settings.hudLayout;
   $("share-status").textContent = shareError;
   $("share-status").hidden = !shareError;
   $("update-status").textContent = updateLine();
@@ -1034,9 +1066,9 @@ function renderEditor() {
 // ---------- dragging (HUD in edit mode, boost box while calibrating) ----------
 
 /** Drags `el` by its top-left corner; `resize` drags its bottom-right instead. */
-function draggable(el: HTMLElement, onDone: () => void, enabled: () => boolean, handle?: HTMLElement) {
+function draggable(el: HTMLElement, onDone: () => void, enabled: (down: PointerEvent) => boolean, handle?: HTMLElement) {
   el.addEventListener("pointerdown", (down) => {
-    if (!enabled()) return;
+    if (!enabled(down)) return;
     const resize = !!handle && (down.target as HTMLElement) === handle;
     const rect = el.getBoundingClientRect();
     const [ox, oy] = [down.clientX, down.clientY];
@@ -1069,8 +1101,150 @@ draggable(
     const r = $("hud").getBoundingClientRect();
     updateSettings({ hudPos: { x: r.left / innerWidth, y: r.top / innerHeight } });
   },
-  () => editMode,
+  // A stat on its own moves just that stat (below).
+  (down) => editMode && !(down.target as HTMLElement).closest(".hud-stat"),
 );
+
+// ---------- arranging the HUD's stats (settings open) ----------
+
+/**
+ * Drags a stat to another spot: onto an empty cell, onto another stat to swap
+ * them, or just past an edge for a new row or column there.
+ */
+$("hud").addEventListener("pointerdown", (down) => {
+  if (!editMode || calibrating || down.button !== 0) return;
+  const tile = (down.target as HTMLElement).closest<HTMLElement>(".hud-stat[data-stat]");
+  if (!tile) return;
+  down.preventDefault();
+  const hud = $("hud");
+  hud.setPointerCapture(down.pointerId);
+  const rect = tile.getBoundingClientRect();
+  const grab = { x: down.clientX - rect.left, y: down.clientY - rect.top };
+  const stop = new AbortController();
+  tileDrag = { tile, ghost: null, marker: null, target: null, stop };
+  const drag = tileDrag;
+
+  hud.addEventListener("pointermove", (e) => {
+    if (!drag.ghost) {
+      if (Math.hypot(e.clientX - down.clientX, e.clientY - down.clientY) < 4) return;
+      startTileDrag(drag);
+    }
+    drag.ghost!.style.left = `${e.clientX - grab.x}px`;
+    drag.ghost!.style.top = `${e.clientY - grab.y}px`;
+    drag.target = hudCellAt(e.clientX, e.clientY);
+    showDropTarget(drag);
+  }, { signal: stop.signal });
+  hud.addEventListener("pointerup", () => finishTileDrag(drag), { signal: stop.signal });
+  hud.addEventListener("pointercancel", () => finishTileDrag(drag), { signal: stop.signal });
+});
+
+function startTileDrag(drag: NonNullable<typeof tileDrag>) {
+  const { tile } = drag;
+  const ghost = tile.cloneNode(true) as HTMLElement;
+  ghost.classList.add("hud-ghost");
+  ghost.style.width = `${tile.offsetWidth}px`;
+  ghost.style.height = `${tile.offsetHeight}px`;
+  ghost.style.transform = `scale(${settings.hudScale / 100})`;
+  document.body.append(ghost);
+  drag.ghost = ghost;
+  drag.marker = document.createElement("div");
+  drag.marker.className = "hud-drop";
+  $("hud").append(drag.marker);
+  tile.classList.add("dragging");
+}
+
+/** Each column's and row's extent in the HUD's own (unscaled) pixels, from its stats and empty cells. */
+function hudBands() {
+  const cols: [number, number][] = [];
+  const rows: [number, number][] = [];
+  const widen = (bands: [number, number][], i: number, from: number, to: number) => {
+    const b = bands[i];
+    bands[i] = b ? [Math.min(b[0], from), Math.max(b[1], to)] : [from, to];
+  };
+  for (const el of $("hud").querySelectorAll<HTMLElement>("[data-row]")) {
+    widen(cols, Number(el.dataset.col), el.offsetLeft, el.offsetLeft + el.offsetWidth);
+    widen(rows, Number(el.dataset.row), el.offsetTop, el.offsetTop + el.offsetHeight);
+  }
+  return { cols, rows };
+}
+
+/** The band a coordinate falls in (across a gap, the nearer one); -1 or one past the end outside them. */
+function bandAt(bands: [number, number][], v: number): number {
+  if (!bands.length || v < bands[0][0]) return -1;
+  for (let i = 0; i < bands.length; i++) {
+    const [from, to] = bands[i];
+    if (v > to) continue;
+    return v >= from || from - v < v - bands[i - 1][1] ? i : i - 1;
+  }
+  return bands.length;
+}
+
+/** The cell under a point on screen; -1 or one past the end means just outside that edge. */
+function hudCellAt(x: number, y: number) {
+  const hud = $("hud");
+  const scale = settings.hudScale / 100;
+  const box = hud.getBoundingClientRect();
+  const { cols, rows } = hudBands();
+  return {
+    row: bandAt(rows, (y - box.top) / scale - hud.clientTop),
+    col: bandAt(cols, (x - box.left) / scale - hud.clientLeft),
+  };
+}
+
+/**
+ * Shows where the stat would land: the cell itself, or for a new row or column
+ * a bar along that edge (drawn inside the HUD, so it shows even at the screen's edge).
+ */
+function showDropTarget(drag: NonNullable<typeof tileDrag>) {
+  const { marker, target } = drag;
+  if (!marker || !target) return;
+  const { cols, rows } = hudBands();
+  const BAR = 4;
+  const span = (bands: [number, number][], i: number): [number, number] => {
+    if (i < 0) return [bands[0][0] - BAR - 2, bands[0][0] - 2];
+    if (i >= bands.length) return [bands[bands.length - 1][1] + 2, bands[bands.length - 1][1] + BAR + 2];
+    return bands[i];
+  };
+  const [left, right] = span(cols, target.col);
+  const [top, bottom] = span(rows, target.row);
+  const edge = target.row < 0 || target.row >= rows.length || target.col < 0 || target.col >= cols.length;
+  marker.classList.toggle("edge", edge);
+  Object.assign(marker.style, { left: `${left}px`, top: `${top}px`, width: `${right - left}px`, height: `${bottom - top}px` });
+}
+
+/** Stops dragging without moving anything. */
+function endTileDrag(drag: NonNullable<typeof tileDrag>) {
+  drag.stop.abort();
+  drag.ghost?.remove();
+  drag.marker?.remove();
+  drag.tile.classList.remove("dragging");
+  tileDrag = null;
+}
+
+function finishTileDrag(drag: NonNullable<typeof tileDrag>) {
+  endTileDrag(drag);
+  const id = drag.tile.dataset.stat!;
+  const cells = hudCells();
+  const from = cells[id];
+  const to = drag.target;
+  if (!from || !to || (to.row === from.row && to.col === from.col)) {
+    renderNow();
+    return;
+  }
+  // The other stats stay where they are on screen, even when the grid grows
+  // on its left or top: the HUD moves by however far they would shift.
+  const anchor = Object.keys(cells).find((s) => s !== id);
+  const at = (s: string) => $("hud").querySelector(`[data-stat="${s}"]`)?.getBoundingClientRect();
+  const before = anchor ? at(anchor) : undefined;
+  updateSettings({ hudCells: moveHudStat(cells, id, to.row, to.col), hudLayout: "custom" });
+  renderNow();
+  const after = anchor ? at(anchor) : undefined;
+  if (before && after && (before.left !== after.left || before.top !== after.top)) {
+    const box = $("hud").getBoundingClientRect();
+    updateSettings({ hudPos: { x: (box.left + before.left - after.left) / innerWidth, y: (box.top + before.top - after.top) / innerHeight } });
+    renderNow();
+  }
+}
 
 // ---------- boost meter calibration ----------
 
@@ -1275,6 +1449,14 @@ picker.addEventListener("change", () => {
 });
 $<HTMLInputElement>("hud-visible").addEventListener("change", (e) => {
   updateSettings({ hudVisible: (e.target as HTMLInputElement).checked });
+  renderNow();
+});
+const layoutInput = $<HTMLSelectElement>("hud-layout");
+layoutInput.addEventListener("change", () => {
+  const layout = layoutInput.value as HudLayout;
+  // Kept in their current order; a spot picked for one shape rarely suits
+  // another, so the HUD starts from its default spot.
+  updateSettings({ hudLayout: layout, hudCells: layoutHud(shownHudStats(), settings.hudCells, layout), hudPos: null });
   renderNow();
 });
 const scaleInput = $<HTMLInputElement>("hud-scale");
