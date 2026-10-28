@@ -36,7 +36,7 @@ export interface ReportOptions {
   tab: string;
   /** Player-table column ids. */
   columns: string[];
-  /** True during a live round, when the report doesn't take clicks. */
+  /** True during a live round of a match, when the report doesn't take clicks. */
   clicksPaused: boolean;
   /** Corrected RL Tracker profiles, keyed by player id or name. */
   trackerOverrides: Record<string, TrackerOverride>;
