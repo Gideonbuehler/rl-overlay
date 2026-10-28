@@ -963,6 +963,7 @@ function renderHudPanel() {
     !!settings.boostRegion || inTauri === false,
     record.teams[team]?.color ?? "#5aa9ff",
   );
+  hud.classList.toggle("row", settings.hudLayout === "row");
   // Scaled from the top-left corner so the saved position stays put.
   hud.style.transform = `scale(${settings.hudScale / 100})`;
   placeHud();
@@ -977,7 +978,10 @@ function lastGameMmr(): number | null {
   return before !== undefined && after !== undefined ? after - before : null;
 }
 
-/** Saved spot, or by default the right edge, below the game's own scoreboard. */
+/**
+ * Saved spot, or by default: two columns at the right edge, below the game's
+ * own scoreboard; one row centred just under it.
+ */
 function placeHud() {
   const hud = $("hud");
   const pos = settings.hudPos;
@@ -986,8 +990,14 @@ function placeHud() {
     hud.style.top = `${pos.y * 100}%`;
     return;
   }
-  hud.style.top = "30%";
-  hud.style.left = `${innerWidth * 0.985 - hud.getBoundingClientRect().width}px`;
+  const width = hud.getBoundingClientRect().width;
+  if (settings.hudLayout === "row") {
+    hud.style.top = "10%";
+    hud.style.left = `${(innerWidth - width) / 2}px`;
+  } else {
+    hud.style.top = "30%";
+    hud.style.left = `${innerWidth * 0.985 - width}px`;
+  }
 }
 addEventListener("resize", () => !$("hud").hidden && placeHud());
 
@@ -1275,6 +1285,13 @@ picker.addEventListener("change", () => {
 });
 $<HTMLInputElement>("hud-visible").addEventListener("change", (e) => {
   updateSettings({ hudVisible: (e.target as HTMLInputElement).checked });
+  renderNow();
+});
+const layoutInput = $<HTMLSelectElement>("hud-layout");
+layoutInput.value = settings.hudLayout;
+layoutInput.addEventListener("change", () => {
+  // A spot picked for one shape rarely suits the other: start from the new layout's default.
+  updateSettings({ hudLayout: layoutInput.value as Settings["hudLayout"], hudPos: null });
   renderNow();
 });
 const scaleInput = $<HTMLInputElement>("hud-scale");

@@ -77,6 +77,8 @@ export interface Settings {
   hudSeen: string[] | null;
   /** HUD size as a percentage. */
   hudScale: number;
+  /** Stats in two columns, or in one row across. */
+  hudLayout: "columns" | "row";
   /** Top-left corner as fractions of the screen, or null for the default spot. */
   hudPos: { x: number; y: number } | null;
   /** Where the boost meter's number is, as fractions of the screen. */
@@ -336,6 +338,7 @@ export const loadSettings = () =>
     hudPos: null,
     hudSeen: null,
     hudScale: 100,
+    hudLayout: "columns",
     boostRegion: null,
     boostLogging: false,
     reportTabs: DEFAULT_TABS,

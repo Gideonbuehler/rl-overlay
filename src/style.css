@@ -1323,6 +1323,12 @@ body.away #calib-bar {
 #hud[hidden] {
   display: none;
 }
+/* One row across instead of two columns. */
+#hud.row {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(104px, auto);
+}
 
 /* Each stat is a small tile with its group's colour down the left edge. */
 .hud-stat {
@@ -1710,6 +1716,12 @@ button.link {
 }
 #editor input[type="checkbox"] {
   padding: 0;
+}
+#editor input[type="range"] {
+  padding: 0;
+  background: none;
+  border: 0;
+  accent-color: var(--accent);
 }
 #editor input:focus {
   outline: 2px solid var(--accent);

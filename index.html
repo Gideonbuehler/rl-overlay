@@ -101,6 +101,13 @@
       <section class="pane" data-pane="hud" hidden>
         <label class="check"><input type="checkbox" id="hud-visible" />Show the HUD</label>
         <label>
+          Layout
+          <select id="hud-layout">
+            <option value="columns">Two columns</option>
+            <option value="row">One row</option>
+          </select>
+        </label>
+        <label>
           Size <span id="hud-scale-value"></span>
           <input type="range" id="hud-scale" min="70" max="180" step="10" />
         </label>
