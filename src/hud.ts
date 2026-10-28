@@ -238,18 +238,40 @@ export function layoutHud(ids: string[], saved: HudCells | null, layout: HudLayo
 }
 
 /**
- * Moves a stat to a cell, swapping with any stat already there. A row or
- * column of -1, or one past the end, adds a new one on that side.
+ * Where a dragged stat lands. A row or column of -1, or one past the end, adds
+ * one on that side. `push` says which way a stat already there makes room.
  */
-export function moveHudStat(cells: HudCells, id: string, row: number, col: number): HudCells {
-  const from = cells[id];
-  if (!from) return cells;
+export type HudDrop = { row: number; col: number; push?: "right" | "down" };
+
+/**
+ * Puts a stat where it was dropped. Whatever is in the way moves along one
+ * step (right unless `push` says down), and so does each stat right behind it
+ * up to the first gap, which the stat's old spot can be. Pushing past the end
+ * adds a column or row.
+ */
+export function dropHudStat(cells: HudCells, id: string, drop: HudDrop): HudCells {
+  if (!cells[id]) return cells;
+  const pushed = new Set(pushedBy(cells, id, drop));
+  const down = drop.push === "down";
   const out: HudCells = {};
-  for (const [k, c] of Object.entries(cells)) out[k] = { ...c };
-  const other = Object.keys(out).find((k) => k !== id && out[k].row === row && out[k].col === col);
-  if (other) out[other] = { ...from };
-  out[id] = { row, col };
+  for (const [k, c] of Object.entries(cells)) {
+    if (k === id) continue;
+    out[k] = !pushed.has(k) ? { ...c } : down ? { row: c.row + 1, col: c.col } : { row: c.row, col: c.col + 1 };
+  }
+  out[id] = { row: drop.row, col: drop.col };
   return compact(out);
+}
+
+/** The stats a drop moves along to make room, nearest first. */
+export function pushedBy(cells: HudCells, id: string, drop: HudDrop): string[] {
+  const at = (row: number, col: number) => Object.keys(cells).find((k) => k !== id && cells[k].row === row && cells[k].col === col);
+  const run: string[] = [];
+  for (let { row, col } = drop, k = at(row, col); k; k = at(row, col)) {
+    run.push(k);
+    if (drop.push === "down") row++;
+    else col++;
+  }
+  return run;
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
