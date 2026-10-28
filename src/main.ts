@@ -1,3 +1,9 @@
+// Bundled, so the overlay looks the same offline.
+import "@fontsource/oxanium/400.css";
+import "@fontsource/oxanium/500.css";
+import "@fontsource/oxanium/600.css";
+import "@fontsource/oxanium/700.css";
+import "@fontsource/oxanium/800.css";
 import "./style.css";
 import { BoostTracker, emptyBoost } from "./boost";
 import { connect, speedKmh, type Envelope, type Feed, type Status } from "./feed";

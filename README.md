@@ -306,7 +306,7 @@ src/hud.ts        compact HUD and its stat catalogue
 src/boost.ts      boost used/collected from readings
 src/mmr.ts        your MMR history and the shared MMR client
 src/main.ts       match flow, show/hide logic, calibration, settings panel
-src/style.css     overlay styles
+src/style.css     overlay styles: a Cyberpunk-style neon look, colours and shapes as tokens at the top
 src-tauri/        transparent click-through window, global hotkeys, tray
 src-tauri/src/boost.rs    screen capture, OCR, and learned digit shapes for the boost meter
 src-tauri/src/store.rs    saved data as files, shared by every build
