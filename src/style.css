@@ -2174,3 +2174,13 @@ button.break-note:hover {
 .sk-inputs .none {
   opacity: 0.7;
 }
+
+/* Estimated MMR (≈), until the next queue logs the real number */
+.mini.est,
+.est,
+.mmr-item[title] {
+  cursor: help;
+}
+.mini.est span {
+  white-space: nowrap;
+}

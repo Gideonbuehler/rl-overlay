@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { freshRecord, wasPlayed, type MatchRecord } from "./match";
-import { logIsLocal, matchMmr, mmrSince, utcAt, type MmrReading } from "./mmr";
+import { DEFAULT_CHANGE, logIsLocal, matchMmr, mmrSince, mmrTable, usualChange, utcAt, type MmrReading } from "./mmr";
 import { computeSession } from "./session";
 
 /** "2026-10-25 17:44:46" style times, as the game logs them (UTC here). */
@@ -90,6 +90,62 @@ describe("session MMR", () => {
       { playlist: 11, from: 1060, to: 1071 },
     ]);
     expect(computeSession([], ms("17:50"), all).mmr[0]).toEqual({ playlist: 2, from: 1472, to: 1463 });
+  });
+});
+
+describe("estimates until the next queue", () => {
+  /** A finished match you played on blue: won or lost. */
+  function played(start: string, end: string, won: boolean, playlistId = 2): MatchRecord {
+    const r = game(start, end, playlistId);
+    r.meName = "Me";
+    r.myTeam = 0;
+    r.players = { Me: { name: "Me", team: 0 } as MatchRecord["players"][string], Them: { name: "Them", team: 1 } as MatchRecord["players"][string] };
+    r.winner = won ? 0 : 1;
+    return r;
+  }
+
+  it("goes by your usual change for a win or a loss, recent ones first", () => {
+    const known = [9, 11, 10, 30].map((change) => ({ playlist: 2, won: true, change }));
+    expect(usualChange(known, 2, true)).toBe(11); // the median shrugs off the early-season 30
+    expect(usualChange(known, 2, false)).toBe(DEFAULT_CHANGE);
+    // Another playlist's wins stand in when this one has too few.
+    expect(usualChange(known, 11, true)).toBe(11);
+  });
+
+  it("estimates only the newest match in a playlist, and only until its next queue", () => {
+    // Queue 17:44 → win → queue 17:52 → win → queue 18:05 → win → (no queue yet).
+    const log = [reading("17:44", 1463), reading("17:52", 1472), reading("18:05", 1481)];
+    const a = played("17:45", "17:51", true);
+    const b = played("17:53", "18:03", true);
+    const c = played("18:06", "18:12", true);
+    const archive = [c, b, a];
+    const table = mmrTable(log, archive);
+    expect(table.get(a)).toEqual({ before: 1463, after: 1472 });
+    expect(table.get(b)).toEqual({ before: 1472, after: 1481 });
+    expect(table.get(c)).toEqual({ before: 1481, estimate: DEFAULT_CHANGE });
+
+    // Queue again and the real number replaces the estimate.
+    const after = mmrTable([...log, reading("18:14", 1489)], archive);
+    expect(after.get(c)).toEqual({ before: 1481, after: 1489 });
+  });
+
+  it("estimates a loss (or leaving) downwards, from your usual loss", () => {
+    const log = [reading("17:00", 1500), reading("17:10", 1490), reading("17:20", 1480), reading("17:30", 1471), reading("17:40", 1460)];
+    const losses = [played("17:01", "17:09", false), played("17:11", "17:19", false), played("17:21", "17:29", false), played("17:31", "17:39", false)];
+    const left = played("17:41", "17:45", false);
+    left.winner = null;
+    left.leftEarly = true;
+    const archive = [left, ...losses.reverse()];
+    expect(mmrTable(log, archive).get(left)?.estimate).toBe(-10);
+  });
+
+  it("adds the pending estimate to the session's MMR", () => {
+    const log = [reading("17:44", 1463), reading("17:52", 1472)];
+    const a = played("17:45", "17:51", true);
+    const b = played("17:53", "18:03", false);
+    const archive = [b, a];
+    const s = computeSession(archive, ms("17:30"), log, mmrTable(log, archive));
+    expect(s.mmr).toEqual([{ playlist: 2, from: 1463, to: 1472, pending: -DEFAULT_CHANGE }]);
   });
 });
 
