@@ -21,17 +21,25 @@ export interface HudContext {
   ballSpeed: number | null;
   /** Your MMR readings from the game log. */
   readings: MmrReading[];
-  /** MMR change from your last finished match, when known. */
-  lastGameMmr: number | null;
+  /** MMR change from your last finished match: logged, or estimated until your next queue. */
+  lastGameMmr: { change: number; estimate: boolean } | null;
+  /** The estimated change still to come per playlist (see MatchMmr.estimate). */
+  pendingMmr: Map<number, number>;
 }
 
-/** Your latest reading for the playlist you're in (or last played). */
-const currentMmr = (c: HudContext) => latestReading(c.readings, c.record.playlistId) ?? latestReading(c.readings);
-/** MMR change this session in the playlist you're in (or played last). */
+/** Your MMR in the playlist you're in (or last played): the latest reading, plus any estimated change since. */
+const currentMmr = (c: HudContext) => {
+  const r = latestReading(c.readings, c.record.playlistId) ?? latestReading(c.readings);
+  if (!r) return null;
+  const pending = c.pendingMmr.get(r.playlist);
+  return { mmr: r.mmr + (pending ?? 0), estimate: pending !== undefined };
+};
+/** MMR change this session in the playlist you're in (or played last), and whether it includes an estimate. */
 const sessionMmr = (c: HudContext) => {
   const m = c.session.mmr.find((x) => x.playlist === c.record.playlistId) ?? c.session.mmr.at(-1);
-  return m ? m.to - m.from : null;
+  return m ? { change: m.to - m.from + (m.pending ?? 0), estimate: m.pending !== undefined } : null;
 };
+const approx = (estimate: boolean) => (estimate ? "≈" : "");
 const toneOf = (d: number | null): Tone => (d === null || d === 0 ? null : d > 0 ? "good" : "bad");
 
 type Group = "Boost" | "You" | "Match" | "Session";
@@ -125,16 +133,17 @@ export const HUD_STATS: HudStat[] = [
     },
   },
 
-  { id: "mmr", label: "MMR", group: "Session", value: (c) => { const r = currentMmr(c); return r ? Math.round(r.mmr).toLocaleString() : null; } },
+  // ≈ marks an estimate: the game logs MMR as you queue, so a match's real change shows at your next queue.
+  { id: "mmr", label: "MMR", group: "Session", value: (c) => { const r = currentMmr(c); return r ? `${approx(r.estimate)}${Math.round(r.mmr).toLocaleString()}` : null; } },
   {
     id: "gameMmr", label: "Last game MMR", group: "Session",
-    value: (c) => (c.lastGameMmr === null ? null : signed(c.lastGameMmr)),
-    tone: (c) => toneOf(c.lastGameMmr),
+    value: (c) => (c.lastGameMmr === null ? null : `${approx(c.lastGameMmr.estimate)}${signed(c.lastGameMmr.change)}`),
+    tone: (c) => toneOf(c.lastGameMmr?.change ?? null),
   },
   {
     id: "mmrChange", label: "Session MMR", group: "Session",
-    value: (c) => { const d = sessionMmr(c); return d === null ? null : signed(d); },
-    tone: (c) => toneOf(sessionMmr(c)),
+    value: (c) => { const d = sessionMmr(c); return d === null ? null : `${approx(d.estimate)}${signed(d.change)}`; },
+    tone: (c) => toneOf(sessionMmr(c)?.change ?? null),
   },
   {
     id: "record", label: "Session", group: "Session",

@@ -11,7 +11,7 @@ import { DEFAULT_COLUMNS, DEFAULT_TABS } from "./report";
 import type { SpeedUnit } from "./units";
 import { RECORD_VERSION, isRealMatch, mvpName, wasPlayed, type MatchRecord } from "./match";
 import { arenaName, playlistName } from "./names";
-import { mmrSince, type MmrReading } from "./mmr";
+import { mmrSince, pendingChanges, type MatchMmr, type MmrReading } from "./mmr";
 
 /** One finished match, as kept in the session history. */
 export interface HistoryEntry {
@@ -35,8 +35,12 @@ export interface HistoryEntry {
 
 export interface Session {
   startedAt: number;
-  /** Your MMR at the first and latest queue this session, per playlist. */
-  mmr: { playlist: number; from: number; to: number }[];
+  /**
+   * Your MMR at the first and latest queue this session, per playlist, plus
+   * the estimated change from a match since then whose next queue hasn't come
+   * (see MatchMmr.estimate).
+   */
+  mmr: { playlist: number; from: number; to: number; pending?: number }[];
   games: number;
   wins: number;
   losses: number;
@@ -251,10 +255,23 @@ export const isWin = (r: MatchRecord) => !r.leftEarly && r.winner === r.myTeam;
  * newest first). Deriving it rather than keeping running totals means it
  * always agrees with your match history.
  */
-export function computeSession(archive: MatchRecord[], startedAt: number, readings: MmrReading[] = []): Session {
+export function computeSession(
+  archive: MatchRecord[],
+  startedAt: number,
+  readings: MmrReading[] = [],
+  mmrs: Map<MatchRecord, MatchMmr> = new Map(),
+): Session {
   const s = emptySession();
   s.startedAt = startedAt;
   s.mmr = mmrSince(readings, startedAt);
+  // The newest match's change isn't logged until you queue again; count its estimate meanwhile.
+  pendingChanges(mmrs).forEach(({ change, match }, playlist) => {
+    if (matchEnd(match) < startedAt || !countsForSession(match)) return;
+    const entry = s.mmr.find((m) => m.playlist === playlist);
+    const before = mmrs.get(match)!.before!;
+    if (entry) entry.pending = change;
+    else s.mmr.push({ playlist, from: before, to: before, pending: change });
+  });
   const matches = archive.filter((r) => matchEnd(r) >= startedAt && countsForSession(r));
 
   for (const r of matches) {

@@ -16,7 +16,7 @@ import { arenaName, isAnonymised, playlistName, platformName, trackerCandidates,
 import { WINDOWS, categorySource, type CategoryProfile, type SkillProfile } from "./skills";
 import { LOSS_RUN, METRICS, RECENT_GAMES, changesSentence, fmtValue, type Comparison, type Consistency, type GameLine } from "./consistency";
 import type { Session } from "./session";
-import { latestReading, signed, type MmrReading, type SharedPlayer } from "./mmr";
+import { latestReading, signed, type MatchMmr, type MmrReading, type SharedPlayer } from "./mmr";
 import { fmtSpeed, toUnit, withUnitLabels } from "./units";
 
 export interface ReportEntry {
@@ -44,8 +44,10 @@ export interface ReportOptions {
   trackerOverrides: Record<string, TrackerOverride>;
   /** Your MMR readings from the game log. */
   readings: MmrReading[];
-  /** Your MMR going into and out of a match (see matchMmr). */
-  mmr: (r: MatchRecord) => { before?: number; after?: number };
+  /** Your MMR going into and out of a match, or the estimated change while "after" isn't logged (see mmrTable). */
+  mmr: (r: MatchRecord) => MatchMmr;
+  /** The estimated change still to come per playlist, from your newest match there. */
+  pendingMmr?: Map<number, number>;
   /** Shared MMR for a player id, if they share it and it's been looked up. */
   shared: (primaryId: string) => SharedPlayer | null;
   /** A short message to show in the footer instead of the usual hint. */
@@ -93,15 +95,18 @@ function resultLabel(r: MatchRecord, live: boolean): { text: string; tone: strin
 
 // ---------- top bar ----------
 
-/** The session's MMR change per playlist, e.g. "MMR +18" or "Doubles +18 · Standard −9". */
+/** Why an MMR number is marked ≈. */
+const ESTIMATE_NOTE = "Estimate: the game logs your MMR only when you queue, so the exact number arrives at your next queue in this playlist. Until then this adds your usual change for a win or a loss.";
+
+/** The session's MMR change per playlist, e.g. "MMR +18" or "Doubles +18 · Standard −9"; ≈ while it includes an estimate. */
 function sessionMmr(s: Session): string {
-  const moved = s.mmr.filter((m) => m.to !== m.from);
+  const moved = s.mmr.map((m) => ({ ...m, d: m.to - m.from + (m.pending ?? 0) })).filter((m) => m.d !== 0 || m.pending !== undefined);
   if (!moved.length) return "";
   const one = moved.length === 1;
   return moved
     .map((m) => {
-      const d = m.to - m.from;
-      return ` · ${one ? "MMR" : esc(playlistName(m.playlist))} <b class="${d > 0 ? "win-text" : "loss-text"}">${signed(d)}</b>`;
+      const est = m.pending !== undefined;
+      return ` · ${one ? "MMR" : esc(playlistName(m.playlist))} <b class="${m.d >= 0 ? "win-text" : "loss-text"}"${est ? ` title="${ESTIMATE_NOTE}"` : ""}>${est ? "≈" : ""}${signed(m.d)}</b>`;
     })
     .join("");
 }
@@ -186,11 +191,13 @@ function youCard(r: MatchRecord, o: ReportOptions): string {
   const mvp = mvpName(r) === me.name;
   const mini = (label: string, value: string, cls = "") => `<div class="mini ${cls}"><b>${value}</b><span>${label}</span></div>`;
   const b = myBoost(r);
-  const { before, after } = o.mmr(r);
-  // The change is known once you queue again (the game logs MMR as you queue).
-  const mmr = before
-    ? mini(after !== undefined ? `MMR ${signed(after - before)}` : "MMR going in", round(after ?? before), after === undefined ? "" : after >= before ? "up" : "down")
-    : "";
+  const { before, after, estimate } = o.mmr(r);
+  // The change is logged once you queue again; until then it's estimated (or, mid-match, just the MMR going in).
+  let mmr = "";
+  if (before !== undefined && after !== undefined) mmr = mini(`MMR ${signed(after - before)}`, round(after), after >= before ? "up" : "down");
+  else if (before !== undefined && estimate !== undefined) {
+    mmr = `<div class="mini ${estimate >= 0 ? "up" : "down"} est" title="${ESTIMATE_NOTE} Going in: ${round(before)}."><b>≈${round(before + estimate)}</b><span>MMR ≈${signed(estimate)} · exact next queue</span></div>`;
+  } else if (before !== undefined) mmr = mini("MMR going in", round(before));
   return `
     <div class="you-card">
       <div class="you-name">${esc(me.name)}${mvp ? `<span class="pill gold">MVP</span>` : ""}</div>
@@ -633,8 +640,9 @@ function matchesView(entries: ReportEntry[], o: ReportOptions): string {
         <td class="num">${me ? kmh(me.topHit) : "–"}</td>
         <td class="num">${b ? `${round(b.used)}${b.exact ? "" : "<sup>est</sup>"}` : "–"}</td>
         <td class="num">${(() => {
-          const { before, after } = o.mmr(r);
+          const { before, after, estimate } = o.mmr(r);
           if (before === undefined) return "–";
+          if (after === undefined && estimate !== undefined) return `<span class="${estimate >= 0 ? "win-text" : "loss-text"} est" title="${ESTIMATE_NOTE}">≈${signed(estimate)}</span>`;
           if (after === undefined) return round(before);
           return `<span class="${after >= before ? "win-text" : "loss-text"}">${signed(after - before)}</span>`;
         })()}</td>
@@ -655,14 +663,15 @@ function matchesView(entries: ReportEntry[], o: ReportOptions): string {
 
 /** MMR per playlist: yours from the game log, anyone else's if they share it. */
 function mmrStrip(isMe: boolean, pid: string, o: ReportOptions): string {
-  const items: { playlist: number; mmr: number }[] = [];
+  const items: { playlist: number; mmr: number; est?: boolean }[] = [];
   if (isMe) {
     const seen = new Set<number>();
     for (let i = o.readings.length - 1; i >= 0; i--) {
       const r = o.readings[i];
       if (seen.has(r.playlist)) continue;
       seen.add(r.playlist);
-      items.push({ playlist: r.playlist, mmr: latestReading(o.readings, r.playlist)!.mmr });
+      const pending = o.pendingMmr?.get(r.playlist);
+      items.push({ playlist: r.playlist, mmr: latestReading(o.readings, r.playlist)!.mmr + (pending ?? 0), est: pending !== undefined });
     }
   } else {
     const shared = pid ? o.shared(pid) : null;
@@ -671,7 +680,7 @@ function mmrStrip(isMe: boolean, pid: string, o: ReportOptions): string {
   if (!items.length) return "";
   items.sort((a, b) => a.playlist - b.playlist);
   return `<div class="mmr-strip">${items
-    .map((i) => `<div class="mmr-item"><b>${round(i.mmr)}</b><span>${esc(playlistName(i.playlist))}</span></div>`)
+    .map((i) => `<div class="mmr-item"${i.est ? ` title="${ESTIMATE_NOTE}"` : ""}><b>${i.est ? "≈" : ""}${round(i.mmr)}</b><span>${esc(playlistName(i.playlist))}</span></div>`)
     .join("")}<em>${isMe ? "From your game log" : "Shared by their overlay"}</em></div>`;
 }
 

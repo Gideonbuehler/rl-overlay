@@ -10,8 +10,11 @@
 //! (checked against RL Tracker: 69.95 in Casual → 1,499 vs. their 1,489 a few
 //! games later). In a party it's the party leader's value, so party queues
 //! count only when you lead: the log names your id at sign-in and the party's
-//! members by index, member 0 being the leader (whoever made the party). The
-//! value is logged as you queue, so it's your MMR going into the match. Today's
+//! members by index, member 0 being the leader (whoever made the party). Queues
+//! for several playlists at once log an average of them, so those are skipped.
+//! The value is logged as you queue, so it's your MMR going into the match, and
+//! the match's own change only shows at your next queue (see mmrTable in
+//! src/mmr.ts for the estimate shown meanwhile). Today's
 //! earlier logs (the game keeps a few backups) are read at startup too. The
 //! logs are only read, never written.
 //!
@@ -139,7 +142,9 @@ impl Parser {
         } else if let Some(rest) = line.split("GetOrderedPartyMemberIDs().Length=(").nth(1) {
             let solo = rest.starts_with("1)");
             let leading = self.me.is_some() && self.me == self.leader;
-            if let (Some(rating), Some((playlist, at)), true) = (self.rating.take(), self.queue.take(), solo || leading) {
+            // Queueing several playlists at once logs an average of their values.
+            let one_playlist = !line.contains("PreferredPlaylists.Length=(") || line.contains("PreferredPlaylists.Length=(1)");
+            if let (Some(rating), Some((playlist, at)), true) = (self.rating.take(), self.queue.take(), (solo || leading) && one_playlist) {
                 return Some(MmrReading { playlist, mmr: (rating * 20.0 + 100.0).round(), at, seen: None });
             }
         }
@@ -234,6 +239,17 @@ mod tests {
         assert_eq!(got[0].playlist, 11);
         assert_eq!(got[0].mmr, 1060.0);
         assert_eq!(got[0].at, "2026-10-24 13:23:52");
+    }
+
+    #[test]
+    fn skips_queues_for_several_playlists() {
+        let log = "\
+[0061.10] Matchmaking: Post-divide PartyLeaderMMR: 52.5
+[0061.10] Matchmaking: StartMatchmaking at 2026-10-24 13:23:52 in USE1,USE3 for playlists 11 on game server
+[0061.10] Matchmaking: PreferredRegions.Length=(2) PreferredPlaylists.Length=(2) Party.GetOrderedPartyMemberIDs().Length=(1)
+";
+        let mut p = Parser::default();
+        assert!(log.lines().all(|l| p.line(l).is_none()), "an average of two playlists is nobody's MMR");
     }
 
     #[test]
