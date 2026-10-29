@@ -12,7 +12,7 @@ import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, dropHudStat, layoutHud, pu
 import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type PlayerBoost } from "./match";
 import { trackerCandidates } from "./names";
 import { setSpeedUnit, type SpeedUnit } from "./units";
-import { DEFAULT_SERVER_URL, SharedMmr, latestReading, logIsLocal, matchMmr, newShareToken, readingTime, utcAt, type MmrReading } from "./mmr";
+import { DEFAULT_SERVER_URL, SharedMmr, latestReading, logIsLocal, matchMmr, mmrTable, newShareToken, pendingChanges, readingTime, utcAt, type MatchMmr, type MmrReading } from "./mmr";
 import { COLUMNS, DEFAULT_TABS, NEW_TABS, TABS, ZONES_COLUMN, overrideKey, renderReport, type ReportEntry, type ReportView } from "./report";
 import { analyse, type Consistency } from "./consistency";
 import { matchSkills, skillProfile, type MatchSkills } from "./skills";
@@ -94,9 +94,15 @@ let consistency: Consistency = analyse([], 0);
 /** Every counted match scored against its lobby, newest first, for the skill radar. */
 let skillMatches: MatchSkills[] = [];
 
+/** Every saved match's MMR, and the estimates still waiting on a queue; recomputed with the session. */
+let mmrs = new Map<MatchRecord, MatchMmr>();
+let pendingMmr = new Map<number, number>();
+
 /** Recomputes the session from the matches since it started. */
 function refreshSession() {
-  session = computeSession(archive, sessionStart, readings);
+  mmrs = mmrTable(readings, archive);
+  pendingMmr = new Map([...pendingChanges(mmrs)].map(([playlist, p]) => [playlist, p.change]));
+  session = computeSession(archive, sessionStart, readings, mmrs);
   consistency = analyse(archive, sessionStart);
   skillMatches = matchSkills(archive);
 }
@@ -641,7 +647,7 @@ function onOwnMmr(...list: MmrReading[]) {
 }
 
 /** The match's MMR change, checked against the rest of your history. */
-const mmrFor = (r: MatchRecord) => matchMmr(readings, r, archive);
+const mmrFor = (r: MatchRecord): MatchMmr => mmrs.get(r) ?? matchMmr(readings, r, archive);
 
 async function shareReading(r: MmrReading) {
   const me = myIdentity();
@@ -945,6 +951,7 @@ function renderNow() {
         trackerOverrides: settings.trackerOverrides,
         readings,
         mmr: mmrFor,
+        pendingMmr,
         shared: (id) => sharedMmr.get(id),
         notice,
         consistency,
@@ -1000,6 +1007,7 @@ function renderHudPanel() {
       ballSpeed,
       readings,
       lastGameMmr: lastGameMmr(),
+      pendingMmr,
     },
     !!settings.boostRegion || inTauri === false,
     record.teams[team]?.color ?? "#5aa9ff",
@@ -1010,13 +1018,14 @@ function renderHudPanel() {
   placeHud();
 }
 
-/** The MMR change from your last finished match with an MMR (not private or training), when it's known. */
-function lastGameMmr(): number | null {
+/** The MMR change from your last finished match with an MMR (not private or training): logged, or estimated until your next queue. */
+function lastGameMmr(): { change: number; estimate: boolean } | null {
   const rated = new Set(readings.map((x) => x.playlist));
   const last = archive.find((r) => r.myTeam !== null && r.playlistId !== undefined && rated.has(r.playlistId));
   if (!last) return null;
-  const { before, after } = mmrFor(last);
-  return before !== undefined && after !== undefined ? after - before : null;
+  const { before, after, estimate } = mmrFor(last);
+  if (before !== undefined && after !== undefined) return { change: after - before, estimate: false };
+  return estimate !== undefined ? { change: estimate, estimate: true } : null;
 }
 
 /**
