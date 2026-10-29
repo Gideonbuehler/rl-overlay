@@ -131,32 +131,34 @@ Session W/L sits at the top right; the session and archive are kept between laun
 
 ### Consistency
 
-The Consistency tab looks for patterns in your own numbers across games. It doesn't
-guess at how you feel. It only names a change when the gap is bigger than normal
-game-to-game variation would explain (a 95% test, with a minimum number of plays behind
-both sides), and it always shows the numbers and how many plays they rest on.
+The Consistency tab answers three questions about your own play, each with a short
+verdict before any numbers. It doesn't guess at how you feel. It only calls something
+worse or better when the gap is bigger than normal game-to-game variation would explain
+(a 95% test, with a minimum number of plays behind both sides); anything smaller is
+"Normal". Measures without enough plays yet are left out and listed as needing more games.
 
-- **Last 4 games** of this session against earlier this session (once there are 4 earlier
-  games), or else against your other games in the same playlists: 50/50s won, 50/50s lost
-  in your own third, how long your team takes to win the ball back, shot accuracy, and
-  where your touches were.
-- **A short break could help:** when at least two of those dropped over your last 4 games,
-  e.g. "Over the last 4 games, your 50/50 success fell from 58% to 33% and your team's time
-  to win the ball back rose from 2.6 s to 4.4 s." The same note sits over the newest match
-  report. Results alone never trigger it.
-- **This session**, game by game, highlighting games with unusually many 50/50s lost in
-  your own third, or unusually slow recoveries, against your usual.
-- **After 2+ losses in a row:** the games that came straight after a losing run (in the
-  same session) against all your others, on the same measures.
-- **By session length:** games 1–3, 4–6, 7–9, and 10+ of a session, each against the rest.
+- **Playing like you usually do?** Your last 4 games of this session against earlier this
+  session (once there are 4 earlier games), or else against your other games in the same
+  playlists: 50/50s won, 50/50s lost near your goal, how long your team takes to get the
+  ball back, shots that scored, and touches in your own end. When at least two of those
+  got worse it says **a short break could help**, e.g. "Over the last 4 games, your 50/50
+  success fell from 58% to 33% and your team's time to get the ball back rose from 2.6 s to
+  4.4 s." The same note sits over the newest match report. Results alone never trigger it.
+  A real change in where you touched the ball is mentioned as neither good nor bad.
+- **Do losing streaks get to you?** Games straight after 2+ losses in a row (in the same
+  session) against all your others: win rate and the same measures.
+- **Do you fade in long sessions?** Win rate for games 1–3, 4–6, 7–9, and 10+ of a session,
+  each checked against the rest, along with the same measures.
+- **This session:** your results in order, marking games with unusually many 50/50s lost
+  near your goal, or unusually slow recoveries, with a line explaining each.
 
 What can be measured is limited by the Stats API, which reports who touched the ball and
 where the ball was, but not where cars are:
 
 - A **50/50** is both teams touching the ball within half a second; it's won when your team
-  touches it next (or scores), and lost deep when lost with the ball in your third.
+  touches it next (or scores), and lost near your goal when lost with the ball in your third.
 - **Positioning** is where your touches happened, by third of the field.
-- **Winning the ball back** is the time from the other team taking the ball to your team
+- **Getting the ball back** is the time from the other team taking the ball to your team
   touching it again (capped at 15 s; quick exchanges inside a 50/50 don't count).
 
 50/50s and recoveries are tracked from this version on, so older matches only count

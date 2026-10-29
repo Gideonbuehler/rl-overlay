@@ -14,7 +14,7 @@ import {
 } from "./match";
 import { arenaName, isAnonymised, playlistName, platformName, trackerCandidates, type TrackerOverride } from "./names";
 import { WINDOWS, categorySource, type CategoryProfile, type SkillProfile } from "./skills";
-import { LOSS_RUN, METRICS, RECENT_GAMES, changesSentence, fmtValue, type Comparison, type Consistency, type GameLine } from "./consistency";
+import { LOSS_RUN, RECENT_GAMES, WINS, changeClause, changesSentence, fmtValue, type Comparison, type Consistency } from "./consistency";
 import type { Session } from "./session";
 import { latestReading, signed, type MatchMmr, type MmrReading, type SharedPlayer } from "./mmr";
 import { fmtSpeed, toUnit, withUnitLabels } from "./units";
@@ -890,118 +890,145 @@ function fieldTab(r: MatchRecord): string {
 }
 
 // ---------- consistency ----------
+//
+// Three questions, each answered in a line before any numbers: are you playing
+// like you usually do, do losing streaks get to you, and do you fade in long
+// sessions. Then this session's games. Rows without enough plays are left out
+// rather than shown empty.
 
 const gamesLabel = (n: number) => `${n} game${n === 1 ? "" : "s"}`;
-const metric = (id: string) => METRICS.find((m) => m.id === id)!;
+const listOf = (xs: string[]) => (xs.length < 3 ? xs.join(" and ") : `${xs.slice(0, -1).join(", ")}, and ${xs[xs.length - 1]}`);
+const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-/** How far apart a comparison's two values are, and which way. */
-function changeMark(c: Comparison): string {
-  if (!c.enough) return `<span class="c-note">Not enough yet</span>`;
-  if (!c.significant) return `<span class="c-note">Normal range</span>`;
-  const gap = Math.abs(c.value! - c.base!);
-  const size = c.metric.kind === "rate" ? `${Math.round(gap * 100)} pts` : `${gap.toFixed(1)} s`;
-  const tone = c.worse ? "worse" : c.improved ? "better" : "shift";
-  return `<span class="c-change ${tone}">${c.value! > c.base! ? "▲" : "▼"} ${size}</span>`;
+type Verdict = "" | "good" | "bad" | "wait";
+
+/** A card for one question: the question, a short answer, then the details. */
+function questionCard(question: string, verdict: string, tone: Verdict, body: string): string {
+  return `<section class="card c-card"><h3>${question}</h3><p class="c-verdict ${tone}">${verdict}</p>${body}</section>`;
 }
 
-/** Metric rows: the value, what it's compared with, and whether that's more than chance. */
-function compareTable(rows: Comparison[], heads: [string, string]): string {
-  const body = rows.map((c) => `
-    <tr class="${c.worse ? "worse" : c.improved ? "better" : ""}">
-      <th title="${c.metric.better ? "" : "Neither better nor worse, just where you played"}">${c.metric.label}</th>
-      <td class="num">${fmtValue(c.metric, c.value)}</td>
-      <td class="c-n">${c.n ? `${c.n} ${c.metric.unit}` : ""}</td>
-      <td class="num">${fmtValue(c.metric, c.base)}</td>
-      <td>${changeMark(c)}</td>
-    </tr>`).join("");
-  return `<table class="c-table"><thead><tr><th></th><th class="num">${heads[0]}</th><th></th><th class="num">${heads[1]}</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+/** Comparisons with enough plays: what it usually is, what it is in these games, and whether that's a real change. */
+function compareRows(rows: Comparison[], heads: [string, string]): string {
+  const shown = rows.filter((c) => c.enough);
+  if (!shown.length) return "";
+  const body = shown.map((c) => {
+    const tone = c.worse ? "worse" : c.improved ? "better" : c.significant ? "shift" : "";
+    const status = c.worse ? "Worse" : c.improved ? "Better" : c.significant ? (c.value! > c.base! ? "Higher" : "Lower") : "Normal";
+    return `<tr class="${tone}">
+      <th title="Based on ${c.n} ${c.metric.unit} against ${c.baseN}">${c.metric.label}</th>
+      <td class="num base">${fmtValue(c.metric, c.base)}</td>
+      <td class="num now">${fmtValue(c.metric, c.value)}</td>
+      <td class="c-status">${status}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="c-table"><thead><tr><th></th><th class="num">${heads[0]}</th><th class="num">${heads[1]}</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
-const trendNote = "Changes are called out only when they're bigger than normal game-to-game variation (95%).";
+/** The comparisons left out for too few plays, in one line. */
+function waitingNote(rows: Comparison[]): string {
+  const missing = rows.filter((c) => !c.enough).map((c) => c.metric.label.toLowerCase());
+  return missing.length ? `<p class="c-wait">Needs more games: ${listOf(missing)}.</p>` : "";
+}
 
-function trendCard(c: Consistency): string {
+const normalNote = `"Normal" means within your usual ups and downs; only bigger changes are called worse or better.`;
+
+/** Real changes that are neither good nor bad (where you touched the ball), as a sentence. */
+function shiftNote(rows: Comparison[]): string {
+  const shifts = rows.filter((r) => r.significant && r.metric.better === 0);
+  return shifts.length ? ` Also, ${listOf(shifts.map(changeClause))}; that's neither good nor bad by itself.` : "";
+}
+
+function nowCard(c: Consistency): string {
+  const q = "Playing like you usually do?";
   const t = c.trend;
   if (!t) {
-    const left = RECENT_GAMES - c.session.length;
-    return card(`Last ${RECENT_GAMES} games`, `<p class="c-lead muted">${c.session.length ? `${gamesLabel(c.session.length)} this session. ` : ""}Play ${left} more game${left === 1 ? "" : "s"} to compare your latest ${RECENT_GAMES} with ${c.games.length > c.session.length ? "your usual" : "the rest"}.</p>`);
+    const played = c.session.length;
+    return questionCard(q, "Not enough games yet", "wait", `<p class="c-lead">Once you've played ${RECENT_GAMES} games in a session, your latest ${RECENT_GAMES} are compared with your usual.${played ? ` ${gamesLabel(played)} so far this session.` : ""}</p>`);
   }
-  const changed = t.rows.filter((r) => r.significant && r.metric.better !== 0);
-  const lead = c.breakReasons.length
-    ? `<p class="c-break"><b>A short break could help.</b> ${changesSentence(c.breakReasons, RECENT_GAMES)}</p>`
-    : changed.length
-      ? `<p class="c-lead">${changesSentence(changed, RECENT_GAMES)}</p>`
-      : `<p class="c-lead">Nothing has moved beyond normal variation over the last ${RECENT_GAMES} games.</p>`;
-  const base = t.baseline === "session" ? `Earlier (${t.base.length})` : `Usual (${t.base.length})`;
-  // Attacking-third touches are left to the after-losses table; the own-third share says enough here.
+  // Touches in their end are left to the streak card; the own-end share says enough here.
   const rows = t.rows.filter((r) => r.metric.id !== "attack");
-  return card(`Last ${RECENT_GAMES} games`, `${lead}${compareTable(rows, [`Last ${RECENT_GAMES}`, base])}
-    <p class="foot">${t.baseline === "session" ? "Against earlier this session" : "Against your other games in the same playlists"}. ${trendNote}</p>`);
+  const worse = rows.filter((r) => r.worse);
+  const better = rows.filter((r) => r.improved);
+  const [verdict, tone, lead]: [string, Verdict, string] = c.breakReasons.length
+    ? ["Dropping off", "bad", `${changesSentence(c.breakReasons, RECENT_GAMES)} A short break could help.`]
+    : worse.length
+      ? ["A little off", "bad", changesSentence(worse, RECENT_GAMES)]
+      : better.length
+        ? ["Better than usual", "good", changesSentence(better, RECENT_GAMES)]
+        : ["About your usual", "", `Nothing is better or worse over your last ${RECENT_GAMES} games beyond your normal ups and downs.`];
+  const against = t.baseline === "session" ? `the ${t.base.length} earlier this session` : `your other ${t.base.length} in the same playlists`;
+  return questionCard(q, verdict, tone, `<p class="c-lead">${lead}${shiftNote(rows)}</p>
+    ${compareRows(rows, [t.baseline === "session" ? "Earlier" : "Usual", `Last ${RECENT_GAMES}`])}${waitingNote(rows)}
+    <p class="foot">Last ${RECENT_GAMES} games against ${against}; "Normal" is within your usual ups and downs.</p>`);
 }
 
-/** This session game by game, with the games that stood out from your usual. */
-function sessionCard(c: Consistency): string {
-  if (!c.session.length) return card("This session", `<p class="muted">No finished matches this session yet.</p>`);
-  const flagged = (g: GameLine, id: string) => c.flags.some((f) => f.game === g && f.metric.id === id);
-  const cell = (g: GameLine, id: string) => {
-    const m = metric(id);
-    const [part, whole] = m.total([g]);
-    return `<td class="num ${flagged(g, id) ? "flag" : ""}">${whole ? fmtValue(m, part / whole) : "–"}</td>`;
-  };
-  // Newest first, so the latest games show without scrolling.
-  const rows = [...c.session].reverse().map((g) => `
-    <tr>
-      <th>${g.nth}</th>
-      <td class="${g.won ? "win-text" : "loss-text"}">${g.won ? "W" : "L"}</td>
-      ${cell(g, "challenges")}${cell(g, "risky")}${cell(g, "regain")}<td class="num">${g.goals}/${g.shots}</td>${cell(g, "defence")}
-    </tr>`).join("");
+function streakCard(c: Consistency): string {
+  const q = "Do losing streaks get to you?";
+  const { games, winRate, rows } = c.afterLosses;
+  const n = games.length;
+  if (n < 3) {
+    return questionCard(q, "Not enough games yet", "wait", `<p class="c-lead">This compares games played straight after ${LOSS_RUN} or more losses in a row with all your others. ${n ? `Only ${gamesLabel(n)} like that so far.` : "None so far."}</p>`);
+  }
+  const won = games.filter((g) => g.won).length;
+  const worse = rows.filter((r) => r.worse);
+  const tilted = worse.length > 0 || winRate.worse;
+  const bounce = !tilted && (winRate.improved || rows.some((r) => r.improved));
+  const verdict = tilted ? "A little" : bounce ? "No, you bounce back" : "No sign of it";
+  const changes = worse.length ? ` In those games, ${listOf(worse.map(changeClause))}.` : "";
+  return questionCard(q, verdict, tilted ? "bad" : bounce ? "good" : "", `
+    <p class="c-lead">After ${LOSS_RUN}+ losses in a row you won ${won} of ${n} (${pct(won, n)}%), against ${fmtValue(winRate.metric, winRate.base)} the rest of the time.${changes}${shiftNote(rows)}</p>
+    ${compareRows(rows, ["Usually", "After"])}${waitingNote(rows)}<p class="foot">${normalNote}</p>`);
+}
+
+function lengthCard(c: Consistency): string {
+  const q = "Do you fade in long sessions?";
+  const later = c.byLength.slice(1);
+  const slips = later.flatMap((b) => [...(b.winRate.worse ? [b.winRate] : []), ...b.rows.filter((r) => r.worse)].map((r) => ({ b, r })));
+  const longGames = c.byLength.slice(2).reduce((n, b) => n + b.games.length, 0);
+  const [verdict, tone]: [string, Verdict] = slips.length
+    ? ["Some signs", "bad"]
+    : longGames < WINS.min ? ["Too few long sessions to tell", "wait"] : ["No sign of it", ""];
+  const lead = slips.length
+    ? `${capitalise(listOf(slips.map(({ b, r }) => `in games ${b.label}, ${changeClause(r)}`)))}, against your other games.`
+    : longGames < WINS.min
+      ? `Only ${gamesLabel(longGames)} so far came 7th or later in a session.`
+      : "No clear drop: the differences between early and late games are within your normal ups and downs.";
+  const bars = c.byLength.map((b) => {
+    const n = b.games.length;
+    if (!n) return `<div class="c-bar empty"><span class="c-bar-label">Games ${b.label}</span><span class="c-bar-track"></span><span class="c-bar-value">No games yet</span></div>`;
+    const share = Math.round((b.wins / n) * 100);
+    const tone = b.winRate.worse ? "worse" : b.winRate.improved ? "better" : "";
+    return `<div class="c-bar ${tone}${n < WINS.min ? " thin" : ""}" title="${b.wins} of ${n} won">
+      <span class="c-bar-label">Games ${b.label}</span>
+      <span class="c-bar-track"><i style="width: ${share}%"></i></span>
+      <span class="c-bar-value">${share}% won <em>${gamesLabel(n)}</em></span>
+    </div>`;
+  }).join("");
+  return questionCard(q, verdict, tone, `<p class="c-lead">${lead}</p>
+    <div class="c-bars">${bars}</div>
+    <p class="foot">Win rate by how far into a session each game was. Faded rows have too few games to mean much.</p>`);
+}
+
+/** This session's results in order, marking games that stood out from your usual. */
+function sessionStrip(c: Consistency): string {
+  if (!c.session.length) return `<section class="card c-session"><h3>This session</h3><p class="muted">No finished games this session yet.</p></section>`;
+  const chips = c.session.map((g) => {
+    const flagged = c.flags.some((f) => f.game === g);
+    return `<span class="c-chip ${g.won ? "win" : "loss"}${flagged ? " flagged" : ""}" title="Game ${g.nth}: ${g.won ? "won" : "lost"}"><small>${g.nth}</small>${g.won ? "W" : "L"}</span>`;
+  }).join("");
   const notes = c.flags.map((f) => {
     const what = f.metric.id === "risky"
-      ? `lost ${f.part} of ${f.whole} 50/50s in your own third (usually ${fmtValue(f.metric, f.usual)})`
-      : `your team took ${(f.part / f.whole).toFixed(1)} s on average to win the ball back (usually ${f.usual.toFixed(1)} s)`;
+      ? `lost ${f.part} of ${f.whole} 50/50s near your own goal (usually ${fmtValue(f.metric, f.usual)})`
+      : `your team took ${(f.part / f.whole).toFixed(1)} s on average to get the ball back (usually ${f.usual.toFixed(1)} s)`;
     return `<li><b>Game ${f.game.nth}:</b> ${what}</li>`;
   }).join("");
-  return card("This session", `
-    <div class="c-scroll"><table class="c-table c-games">
-      <thead><tr><th>#</th><th></th><th title="50/50s your team came out of with the ball">50/50 won</th><th title="50/50s lost with the ball in your own third">Lost deep</th><th title="Your team's average time to win the ball back">Win back</th><th>Goals/shots</th><th title="Share of your touches in your own third">Own third</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div>
-    ${notes ? `<ul class="c-flags">${notes}</ul>` : `<p class="foot">No game this session stood out from your usual on risky 50/50s or winning the ball back.</p>`}`);
-}
-
-function afterLossesCard(c: Consistency): string {
-  const n = c.afterLosses.games.length;
-  const title = `After ${LOSS_RUN}+ losses in a row`;
-  if (n < 3) return card(title, `<p class="muted">${n ? `Only ${gamesLabel(n)} so far` : "No games yet"} straight after ${LOSS_RUN} or more losses in a row. This fills in as you play.</p>`);
-  const won = c.afterLosses.games.filter((g) => g.won).length;
-  return card(title, `<p class="c-lead">${gamesLabel(n)} came straight after a losing run; you won ${won} (${pct(won, n)}%).</p>
-    ${compareTable(c.afterLosses.rows, ["After", "Otherwise"])}`);
-}
-
-function sessionLengthCard(c: Consistency): string {
-  const ids = ["challenges", "regain", "accuracy", "defence"];
-  const short: Record<string, string> = { challenges: "50/50s won", regain: "Win back", accuracy: "Accuracy", defence: "Own third" };
-  const rows = c.byLength.map((b) => {
-    if (!b.games.length) return `<tr class="empty"><th>${b.label}</th><td class="num">0</td><td colspan="${ids.length + 1}" class="c-note">No games yet</td></tr>`;
-    const cells = ids.map((id) => {
-      const cmp = b.rows.find((r) => r.metric.id === id)!;
-      const tone = cmp.worse ? "worse" : cmp.improved ? "better" : cmp.significant ? "shift" : "";
-      const thin = cmp.n < cmp.metric.min ? " thin" : "";
-      return `<td class="num ${tone}${thin}">${fmtValue(cmp.metric, cmp.value)}</td>`;
-    }).join("");
-    return `<tr><th>${b.label}</th><td class="num">${b.games.length}</td><td class="num">${pct(b.wins, b.games.length)}%</td>${cells}</tr>`;
-  }).join("");
-  return card("By session length", `
-    <table class="c-table c-length">
-      <thead><tr><th>Game</th><th class="num">Played</th><th class="num">Won</th>${ids.map((id) => `<th class="num" title="${metric(id).label}">${short[id]}</th>`).join("")}</tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-    <p class="foot">Each row is compared with all your other games; coloured values differ by more than chance, faded ones rest on too few plays.</p>`);
+  return `<section class="card c-session"><h3>This session</h3><div class="c-chips">${chips}</div>${notes ? `<ul class="c-flags">${notes}</ul>` : ""}</section>`;
 }
 
 function consistencyTab(_r: MatchRecord, o: ReportOptions): string {
   const c = o.consistency;
   if (!c) return `<p class="muted">No match history yet.</p>`;
-  return `<div class="tab-grid consistency">${trendCard(c)}${sessionCard(c)}${afterLossesCard(c)}${sessionLengthCard(c)}</div>`;
+  return `<div class="tab-grid consistency">${nowCard(c)}${streakCard(c)}${lengthCard(c)}${sessionStrip(c)}</div>`;
 }
 
 /** A note over the newest match when your own numbers have dropped. */

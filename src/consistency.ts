@@ -62,26 +62,35 @@ export const METRICS: Metric[] = [
     total: (gs) => [add(gs, (g) => g.challengesWon), add(gs, (g) => g.challenges)],
   },
   {
-    id: "risky", label: "50/50s lost in your third", noun: "share of 50/50s lost in your own third", better: -1, kind: "rate", unit: "50/50s", min: 15,
+    id: "risky", label: "50/50s lost near your goal", noun: "share of 50/50s lost near your own goal", better: -1, kind: "rate", unit: "50/50s", min: 15,
     total: (gs) => [add(gs, (g) => g.challengesLostDefence), add(gs, (g) => g.challenges)],
   },
   {
-    id: "regain", label: "Time to win it back", noun: "team's time to win the ball back", better: -1, kind: "seconds", unit: "regains", min: 15,
+    id: "regain", label: "Time to get the ball back", noun: "team's time to get the ball back", better: -1, kind: "seconds", unit: "regains", min: 15,
     total: (gs) => [add(gs, (g) => g.regainTime), add(gs, (g) => g.regainCount)],
   },
   {
-    id: "accuracy", label: "Shot accuracy", noun: "shot accuracy", better: 1, kind: "rate", unit: "shots", min: 8,
+    id: "accuracy", label: "Shots that scored", noun: "share of shots that scored", better: 1, kind: "rate", unit: "shots", min: 8,
     total: (gs) => [add(gs, (g) => g.goals), add(gs, (g) => g.shots)],
   },
   {
-    id: "defence", label: "Touches in your third", noun: "share of touches in your own third", better: 0, kind: "rate", unit: "touches", min: 30,
+    id: "defence", label: "Touches in your own end", noun: "share of touches in your own end", better: 0, kind: "rate", unit: "touches", min: 30,
     total: (gs) => [add(gs, (g) => g.thirds[0]), add(gs, touches)],
   },
   {
-    id: "attack", label: "Touches in attack", noun: "share of touches in the attacking third", better: 0, kind: "rate", unit: "touches", min: 30,
+    id: "attack", label: "Touches in their end", noun: "share of touches in their end", better: 0, kind: "rate", unit: "touches", min: 30,
     total: (gs) => [add(gs, (g) => g.thirds[2]), add(gs, touches)],
   },
 ];
+
+/**
+ * Games won, for comparing groups of games. It's kept out of METRICS so that
+ * results alone never suggest a break.
+ */
+export const WINS: Metric = {
+  id: "wins", label: "Games won", noun: "win rate", better: 1, kind: "rate", unit: "games", min: 5,
+  total: (gs) => [gs.filter((g) => g.won).length, gs.length],
+};
 
 /** How far apart two groups must be, in standard errors, to call it a change (two-sided 95%). */
 const Z = 1.96;
@@ -224,6 +233,8 @@ export interface SessionLengthRow {
   label: string;
   games: GameLine[];
   wins: number;
+  /** These games' win rate against all your others. */
+  winRate: Comparison;
   rows: Comparison[];
 }
 
@@ -237,7 +248,7 @@ export interface Consistency {
   breakReasons: Comparison[];
   flags: Flag[];
   /** Games straight after LOSS_RUN or more losses in a row, against all the others. */
-  afterLosses: { games: GameLine[]; rows: Comparison[] };
+  afterLosses: { games: GameLine[]; winRate: Comparison; rows: Comparison[] };
   /** Games by how far into a session they were, each against the rest. */
   byLength: SessionLengthRow[];
 }
@@ -290,10 +301,16 @@ export function analyse(archive: MatchRecord[], sessionStart: number): Consisten
     trend,
     breakReasons: worse.length >= 2 ? worse : [],
     flags,
-    afterLosses: { games: after, rows: METRICS.map((m) => compare(m, after, others(after))) },
+    afterLosses: { games: after, winRate: compare(WINS, after, others(after)), rows: METRICS.map((m) => compare(m, after, others(after))) },
     byLength: BUCKETS.map((b) => {
       const gs = games.filter((g) => g.nth >= b.from && g.nth <= b.to);
-      return { label: b.label, games: gs, wins: gs.filter((g) => g.won).length, rows: METRICS.map((m) => compare(m, gs, others(gs))) };
+      return {
+        label: b.label,
+        games: gs,
+        wins: gs.filter((g) => g.won).length,
+        winRate: compare(WINS, gs, others(gs)),
+        rows: METRICS.map((m) => compare(m, gs, others(gs))),
+      };
     }),
   };
 }

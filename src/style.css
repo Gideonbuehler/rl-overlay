@@ -1851,39 +1851,46 @@ button.link {
   display: none;
 }
 
-/* Consistency tab: your latest games against your usual */
+/* Consistency tab: three questions about your play, then this session's games */
 .tab-grid.consistency {
-  grid-template-columns: 1.1fr 1fr;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr) auto;
 }
 .tab-grid.consistency > .card {
   overflow-y: auto;
 }
-.c-lead {
+.c-verdict {
   margin: 0 0 var(--space-2) !important;
-  font-size: var(--fs-sm);
-  color: var(--text-dim);
+  font: 700 var(--fs-lg) var(--font-display);
+  color: var(--text);
 }
-.c-break {
-  margin: 0 0 var(--space-2) !important;
-  padding: var(--space-2) var(--space-3);
-  clip-path: var(--chamfer-sm);
-  background: color-mix(in srgb, var(--boost) 10%, transparent);
-  box-shadow: inset 3px 0 0 var(--boost);
-  font-size: var(--fs-sm);
-  color: var(--text-dim);
+.c-verdict.good {
+  color: var(--cyan);
 }
-.c-break b {
+.c-verdict.bad {
   color: var(--boost);
+}
+.c-verdict.wait {
+  color: var(--muted);
+}
+.c-lead {
+  margin: 0 0 var(--space-3) !important;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+.c-wait {
+  margin-top: var(--space-2) !important;
+  font-size: var(--fs-xs);
+  color: var(--muted);
 }
 .c-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
 }
 .c-table th,
 .c-table td {
-  padding: 2px var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
@@ -1896,54 +1903,113 @@ button.link {
   color: var(--muted);
 }
 .c-table tbody th {
+  width: 100%;
   font-weight: 500;
+  white-space: normal;
   color: var(--text-dim);
 }
 .c-table .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.c-table .c-n {
-  padding-left: 2px;
+.c-table .base {
   color: var(--muted);
-  font-size: var(--fs-2xs);
 }
-.c-scroll {
-  max-height: 150px;
-  overflow-y: auto;
-}
-.c-table tr.worse th,
-.c-table td.worse,
-.c-change.worse {
-  color: var(--boost);
-}
-.c-table tr.better th,
-.c-table td.better,
-.c-change.better {
-  color: var(--cyan);
-}
-.c-table td.shift,
-.c-change.shift {
+.c-table .now {
+  font-weight: 600;
   color: var(--text);
 }
-.c-table td.thin {
-  opacity: 0.45;
-}
-.c-table td.flag {
-  color: var(--boost);
-  background: color-mix(in srgb, var(--boost) 12%, transparent);
-}
-.c-change {
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.c-note {
+.c-status {
+  text-align: right !important;
   font-size: var(--fs-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-.c-games th:first-child {
-  width: 1.5em;
+.c-table tr.worse .now,
+.c-table tr.worse .c-status {
+  color: var(--boost);
+}
+.c-table tr.better .now,
+.c-table tr.better .c-status {
+  color: var(--cyan);
+}
+.c-table tr.shift .c-status {
+  color: var(--text);
+}
+.c-bars {
+  display: grid;
+  gap: var(--space-2);
+}
+.c-bar {
+  display: grid;
+  grid-template-columns: 6.5em minmax(0, 1fr) 9.5em;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--fs-sm);
+}
+.c-bar.thin {
+  opacity: 0.5;
+}
+.c-bar-label {
+  color: var(--text-dim);
+}
+.c-bar-track {
+  height: 10px;
+  background: var(--line);
+}
+.c-bar-track i {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+}
+.c-bar.worse .c-bar-track i {
+  background: var(--boost);
+}
+.c-bar-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.c-bar-value em,
+.c-bar.empty .c-bar-value {
+  font-style: normal;
   color: var(--muted);
+}
+.c-bar-value em {
+  margin-left: var(--space-1);
+  font-size: var(--fs-xs);
+}
+.c-session {
+  grid-column: 1 / -1;
+}
+.c-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.c-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  clip-path: var(--chamfer-sm);
+  background: color-mix(in srgb, var(--win) 14%, transparent);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--win);
+}
+.c-chip.loss {
+  background: color-mix(in srgb, var(--loss) 14%, transparent);
+  color: var(--loss);
+}
+.c-chip small {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  color: var(--muted);
+}
+.c-chip.flagged {
+  box-shadow: inset 0 -2px 0 var(--boost);
 }
 .c-flags {
   margin: var(--space-2) 0 0;
@@ -1953,6 +2019,21 @@ button.link {
 }
 .c-flags b {
   color: var(--boost);
+}
+/* Change marks, shared with the skills tab */
+.c-change {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.c-change.worse {
+  color: var(--boost);
+}
+.c-change.better {
+  color: var(--cyan);
+}
+.c-note {
+  font-size: var(--fs-2xs);
+  color: var(--muted);
 }
 
 /* The note over the newest match when your numbers have dropped */
