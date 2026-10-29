@@ -48,4 +48,6 @@ windows = { version = "0.62", features = [
 # Replay parsing (headers, goal frames) and exact boost stats from replays.
 boxcars = "0.13"
 subtr-actor = "1.5"
+# Frame data from subtr-actor, for mechanics (src/mechanics.rs).
+ndarray = "0.17"
 dirs = "6"

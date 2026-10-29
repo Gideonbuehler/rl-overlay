@@ -2,6 +2,7 @@ mod autorun;
 mod boost;
 mod focus;
 mod gamerun;
+mod mechanics;
 mod mmr;
 mod replays;
 mod setup;
@@ -9,6 +10,7 @@ mod store;
 mod update;
 
 pub use boost::ocr_test;
+pub use mechanics::mechanics_test;
 pub use replays::replay_test;
 pub use setup::enable_from_args;
 
@@ -324,6 +326,8 @@ pub fn run() {
             boost::set_boost_logging,
             replays::list_replays,
             replays::replay_boost,
+            replays::recycle_replays,
+            mechanics::replay_mechanics,
             focus::set_click_zones,
             focus::press_save_replay,
             setup::find_rocket_league,

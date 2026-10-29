@@ -3,6 +3,7 @@
 // who won the race to the ball, possession over time, and where goals went in.
 
 import type { BoostStats } from "./boost";
+import type { MechAttempt } from "./mechanics";
 import { speedKmh, type Envelope, type PlayerRef } from "./feed";
 import { platformName } from "./names";
 
@@ -143,6 +144,18 @@ export interface MatchRecord {
   replay?: ReplayLink | null;
   /** Everyone's exact boost, from that replay. */
   replayBoost?: PlayerBoost[] | null;
+  /**
+   * The overlay pressed Save Replay for this match (false when it didn't).
+   * Missing on matches saved before it kept track.
+   */
+  replayAutoSaved?: boolean;
+  /** You chose to keep this match's replay out of the cleanup. */
+  keepReplay?: boolean;
+  /**
+   * Every player's touches and whiffs from the replay, with their conditions
+   * (see mechanics.ts), by name; {} when the replay couldn't be analysed.
+   */
+  mechanics?: Record<string, MechAttempt[]> | null;
   /** You left before full time (no result recorded). */
   leftEarly?: boolean;
   /**
@@ -221,6 +234,7 @@ export function freshRecord(guid = ""): MatchRecord {
     crossbars: [0, 0],
     boost: null,
     regain: { time: [0, 0], count: [0, 0] },
+    replayAutoSaved: false,
   };
 }
 

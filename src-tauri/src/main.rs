@@ -13,6 +13,10 @@ fn main() {
     if args.first().map(String::as_str) == Some("--enable-stats-api") {
         std::process::exit(rl_overlay_lib::enable_from_args(&args[1..]));
     }
+    if args.first().map(String::as_str) == Some("--mechanics-test") {
+        rl_overlay_lib::mechanics_test(args.get(1).map_or("", String::as_str));
+        return;
+    }
     if args.first().map(String::as_str) == Some("--replay-test") {
         rl_overlay_lib::replay_test(args.get(1).map_or("", String::as_str));
         return;

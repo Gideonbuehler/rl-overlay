@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { freshRecord, type MatchRecord, type PlayerBoost, type PlayerLine } from "./match";
+import type { MechAttempt } from "./mechanics";
 import { CATEGORIES, beats, categorySource, matchSkills, skillProfile, type MatchSkills } from "./skills";
 
 function player(name: string, team: number, over: Partial<PlayerLine> = {}): PlayerLine {
@@ -40,28 +41,40 @@ describe("beats", () => {
 
 describe("matchSkills", () => {
   it("scores you against the lobby, per player and per team", () => {
-    const r = match(1, { aerials: 10, saves: 3 }, { aerials: 5, saves: 0, shots: 2 });
+    const r = match(1, { saves: 3 }, { saves: 0, shots: 2 });
     r.regain = { time: [30, 60], count: [10, 10] }; // you win it back in 3 s, they take 6 s
     const [m] = matchSkills([r]);
-    expect(m.inputs.aerials).toBe(1);
     expect(m.inputs.recovery).toBe(1);
-    expect(m.inputs.hitSpeed).toBe(0.5); // everyone ties
-    // Mechanics is the mean of its inputs that have data (hard hits all tie at 0).
-    expect(m.categories.mechanics).toBeCloseTo((1 + 0.5 + 0.5 + 1) / 4);
     // Your team saved 3 of the 4 shots the other team took; they saved none of Mate's 2.
     expect(m.inputs.saveRate).toBe(1);
+  });
+
+  it("scores mechanics on how reliably attempts come off, not how many there are", () => {
+    const tries = (clean: number, missed: number, kind: MechAttempt[0] = "a"): MechAttempt[] => [
+      ...Array.from({ length: clean }, (): MechAttempt => [kind, 0, 60, 20, 20, "c"]),
+      ...Array.from({ length: missed }, (): MechAttempt => [kind, 0, 60, 20, 20, "w"]),
+    ];
+    const r = match(1);
+    // You: 16 of 20 aerials clean. Mate: 3 of 3 (flashy but few). Opponents: lots, mostly missed.
+    r.mechanics = { Me: tries(16, 4), Mate: tries(3, 0), Opp1: tries(10, 20), Opp2: tries(12, 18) };
+    const [m] = matchSkills([r]);
+    expect(m.inputs.inAir).toBe(1);
+    expect(m.inputs.clean).toBe(1);
+    expect(m.inputs.atSpeed).toBeNull(); // nobody was going 70+
+    // Without a replay there's nothing to go on.
+    expect(matchSkills([match(2)])[0].categories.mechanics).toBeNull();
   });
 
   it("leaves out what a match has no data for, and players who left", () => {
     const r = match(1, { shots: 0 }, { shots: 3, goals: 1 });
     r.players.Opp1.left = true;
-    r.players.Opp1.aerials = 99;
+    r.players.Opp1.saves = 99;
     const [m] = matchSkills([r]);
     expect(m.inputs.accuracy).toBeNull();
     expect(m.categories.shooting).toBeNull();
     expect(m.inputs.won).toBeNull(); // no 50/50s tracked
     expect(m.inputs.empty).toBeNull(); // no replay
-    expect(m.inputs.aerials).toBe(0.5); // ties with Mate and Opp2; Opp1 left
+    expect(m.inputs.saves).toBe(0.5); // ties with Mate and Opp2 at 0; Opp1 left
   });
 
   it("reads boost from the saved replay", () => {
@@ -112,7 +125,7 @@ describe("skillProfile", () => {
 describe("categories", () => {
   it("says which are measured, estimated, or both", () => {
     expect(Object.fromEntries(CATEGORIES.map((c) => [c.id, categorySource(c)]))).toEqual({
-      mechanics: "mixed", positioning: "estimate", challenges: "estimate", boost: "measured", shooting: "measured", defence: "measured",
+      mechanics: "estimate", positioning: "estimate", challenges: "estimate", boost: "measured", shooting: "measured", defence: "measured",
     });
   });
 });

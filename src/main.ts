@@ -5,17 +5,19 @@ import "@fontsource/oxanium/600.css";
 import "@fontsource/oxanium/700.css";
 import "@fontsource/oxanium/800.css";
 import "./style.css";
-import { BoostTracker, emptyBoost } from "./boost";
+import { BoostTracker, SpikeFilter, emptyBoost } from "./boost";
 import { connect, speedKmh, type Envelope, type Feed, type Status } from "./feed";
 import { hotkeyFrom, hotkeyProblem, isModifierKey, matchesHotkey } from "./hotkeys";
 import { DEFAULT_HUD_STATS, HUD_STATS, NEW_HUD_STATS, dropHudStat, layoutHud, pushedBy, renderHud, type HudDrop, type HudLayout } from "./hud";
 import { MatchTracker, duration, isRealMatch, wasPlayed, type MatchRecord, type PlayerBoost } from "./match";
 import { trackerCandidates } from "./names";
+import { cleanable, replaysToRecycle } from "./cleanup";
 import { setSpeedUnit, type SpeedUnit } from "./units";
 import { DEFAULT_SERVER_URL, SharedMmr, latestReading, logIsLocal, matchMmr, mmrTable, newShareToken, pendingChanges, readingTime, utcAt, type MatchMmr, type MmrReading } from "./mmr";
 import { COLUMNS, DEFAULT_TABS, NEW_TABS, TABS, ZONES_COLUMN, overrideKey, renderReport, type ReportEntry, type ReportView } from "./report";
 import { analyse, type Consistency } from "./consistency";
 import { matchSkills, skillProfile, type MatchSkills } from "./skills";
+import { mechanicsProfile, pack, type MechanicsProfile, type RawPlayerMechanics } from "./mechanics";
 import {
   ARCHIVE_LIMIT,
   computeSession,
@@ -93,6 +95,10 @@ const archive = loadArchive();
 let consistency: Consistency = analyse([], 0);
 /** Every counted match scored against its lobby, newest first, for the skill radar. */
 let skillMatches: MatchSkills[] = [];
+/** Your mechanics over the skill window, for the Skills tab's breakdown. */
+let mechProfile: MechanicsProfile = mechanicsProfile([], 0);
+/** The Skills tab's open breakdown ("mechanics"), or null for the overview. */
+let skillDetail: string | null = null;
 
 /** Every saved match's MMR, and the estimates still waiting on a queue; recomputed with the session. */
 let mmrs = new Map<MatchRecord, MatchMmr>();
@@ -105,6 +111,7 @@ function refreshSession() {
   session = computeSession(archive, sessionStart, readings, mmrs);
   consistency = analyse(archive, sessionStart);
   skillMatches = matchSkills(archive);
+  mechProfile = mechanicsProfile(archive, settings.skillWindow);
 }
 
 /** When Rocket League was last opened (a restart within 5 minutes doesn't count), or 0. */
@@ -166,13 +173,16 @@ const boost = new BoostTracker(() => {
 /** When spectating, the API sends boost directly and the screen reader steps aside. */
 let apiBoostAt = 0;
 let calibrating = false;
-/** Recent raw readings; the median of the last three smooths out one-frame misreads. */
-const recentReadings: number[] = [];
+/** Drops one-frame misreads from the screen reader before they're counted. */
+const spikes = new SpikeFilter();
+let lastReadingAt = 0;
 
 /** Saved replays found on disk, newest first (from src-tauri/src/replays.rs). */
 interface ReplayInfo {
   path: string;
   id: string;
+  /** The name typed when saving it; empty for the overlay's own saves. */
+  name: string;
   matchGuid: string;
   /** Match start, unix seconds. */
   startEpoch: number;
@@ -434,13 +444,13 @@ function syncBoostReader() {
 
 function onBoostReading(r: { value: number | null; raw: string; learned: string }) {
   lastReading = r;
+  const now = performance.now();
+  // After a pause (the report was up, say), don't compare across the gap.
+  if (now - lastReadingAt > 1000) spikes.reset();
+  lastReadingAt = now;
+  const checked = r.value === null ? null : spikes.push(r.value);
   // Spectator data from the API is exact; prefer it while it's arriving.
-  if (r.value !== null) {
-    recentReadings.push(r.value);
-    if (recentReadings.length > 3) recentReadings.shift();
-  }
-  const smoothed = recentReadings.length === 3 ? [...recentReadings].sort((a, b) => a - b)[1] : r.value;
-  if (r.value !== null && performance.now() - apiBoostAt > 2000) boost.reading(smoothed);
+  if (checked !== null && now - apiBoostAt > 2000) boost.reading(checked);
   if (calibrating) renderCalibration();
   else scheduleRender();
 }
@@ -541,6 +551,13 @@ function scheduleReplaySave(delayMs: number) {
     try {
       await invoke("press_save_replay");
       replaySavedFor = r;
+      // Marks the replay as the overlay's, for the cleanup (see cleanReplays).
+      r.replayAutoSaved = true;
+      const booked = archive.find((a) => a.guid && a.guid === r.guid);
+      if (booked) {
+        booked.replayAutoSaved = true;
+        saveArchive(archive);
+      }
     } catch (e) {
       // Mid-match, the next kickoff tries again; at full time, say so.
       if (r.winner !== null) showNotice(`Replay not saved: ${e}`);
@@ -736,11 +753,77 @@ function onReplays(list: ReplayInfo[]) {
   for (const r of archive) {
     if (r.replay && !r.replayBoost && !boostPending.has(r.replay.id)) fetchReplayBoost(r);
   }
+  queueMechanics();
   if (linked) {
     saveArchive(archive);
     scheduleRender();
   }
   renderEditor();
+  cleanReplays();
+}
+
+// ---------- mechanics from replays ----------
+
+/**
+ * Matches waiting for the mechanics analysis (src-tauri/src/mechanics.rs).
+ * Each takes a few seconds of a CPU core, so they go one at a time.
+ */
+const mechQueue: MatchRecord[] = [];
+let mechBusy = false;
+
+function queueMechanics() {
+  for (const r of archive) if (r.replay && r.mechanics === undefined && !mechQueue.includes(r)) mechQueue.push(r);
+  runMechQueue();
+}
+
+async function runMechQueue() {
+  if (mechBusy || !inTauri) return;
+  const r = mechQueue.shift();
+  if (!r) return;
+  mechBusy = true;
+  try {
+    if (r.replay && r.mechanics === undefined) {
+      const raw = await invoke<RawPlayerMechanics[]>("replay_mechanics", { path: r.replay.path, id: r.replay.id });
+      r.mechanics = raw ? pack(raw) : {};
+    }
+  } catch (e) {
+    // Marked as done with no data, so it isn't retried forever and the cleanup can move on.
+    console.warn("Couldn't analyse mechanics:", e);
+    r.mechanics = {};
+  } finally {
+    mechBusy = false;
+  }
+  refreshSession();
+  saveArchive(archive);
+  scheduleRender();
+  cleanReplays();
+  runMechQueue();
+}
+
+let cleaning = false;
+
+/**
+ * Keeps the newest settings.replayKeep replays the overlay saved and sends
+ * older ones to the Recycle Bin, once their exact boost has been read (it stays
+ * in your match history). Goals in those matches can't be watched afterwards.
+ */
+async function cleanReplays() {
+  if (!inTauri || !settings.replayKeep || cleaning) return;
+  const old = replaysToRecycle(archive, replays, settings.replayKeep);
+  if (!old.length) return;
+  cleaning = true;
+  try {
+    const gone = new Set((await invoke<string[]>("recycle_replays", { paths: old.map((r) => r.replay!.path) })) ?? []);
+    for (const r of old) if (gone.has(r.replay!.path)) r.replay = null;
+    if (gone.size) {
+      saveArchive(archive);
+      scheduleRender();
+    }
+  } catch (e) {
+    console.warn("Couldn't clean up replays:", e);
+  } finally {
+    cleaning = false;
+  }
 }
 
 async function fetchReplayBoost(r: MatchRecord) {
@@ -753,6 +836,7 @@ async function fetchReplayBoost(r: MatchRecord) {
     refreshSession();
     saveArchive(archive);
     scheduleRender();
+    cleanReplays();
   } catch (e) {
     console.warn(`Couldn't read boost from replay ${link.id}:`, e);
   } finally {
@@ -951,11 +1035,14 @@ function renderNow() {
         trackerOverrides: settings.trackerOverrides,
         readings,
         mmr: mmrFor,
+        cleanable: (r) => cleanable(r, replays),
         pendingMmr,
         shared: (id) => sharedMmr.get(id),
         notice,
         consistency,
         skills: skillProfile(skillMatches, settings.skillWindow),
+        mechanics: mechProfile,
+        skillDetail,
       },
       view,
     );
@@ -1670,6 +1757,12 @@ const autoSaveInput = $<HTMLInputElement>("auto-save-replays");
 autoSaveInput.checked = settings.autoSaveReplays;
 autoSaveInput.disabled = !inTauri;
 autoSaveInput.addEventListener("change", () => updateSettings({ autoSaveReplays: autoSaveInput.checked }));
+const keepInput = $<HTMLSelectElement>("replay-keep");
+keepInput.value = String(settings.replayKeep);
+keepInput.addEventListener("change", () => {
+  updateSettings({ replayKeep: Number(keepInput.value) });
+  cleanReplays();
+});
 
 const loggingInput = $<HTMLInputElement>("boost-logging");
 loggingInput.checked = settings.boostLogging;
@@ -1744,6 +1837,13 @@ $("report").addEventListener("pointerdown", (e) => {
   const win = target.closest<HTMLElement>("[data-skill-window]");
   if (win) {
     updateSettings({ skillWindow: Number(win.dataset.skillWindow) });
+    mechProfile = mechanicsProfile(archive, settings.skillWindow);
+    renderNow();
+    return;
+  }
+  const detail = target.closest<HTMLElement>("[data-skill-detail]");
+  if (detail) {
+    skillDetail = detail.dataset.skillDetail || null;
     renderNow();
     return;
   }
@@ -1776,6 +1876,18 @@ $("report").addEventListener("pointerdown", (e) => {
   const tracker = target.closest<HTMLElement>("[data-tracker]");
   if (tracker) {
     openTracker(tracker.dataset.tracker!, tracker.dataset.pid ?? "");
+    return;
+  }
+  if (target.closest("[data-keep-replay]")) {
+    const entries = reportEntries();
+    const record = entries[selectedIndex(entries)]?.record;
+    const booked = record && (archive.find((a) => a === record || (a.guid && a.guid === record.guid)) ?? record);
+    if (booked) {
+      booked.keepReplay = !booked.keepReplay;
+      saveArchive(archive);
+      scheduleRender();
+      cleanReplays();
+    }
     return;
   }
   const goal = target.closest<HTMLElement>("[data-goal]");

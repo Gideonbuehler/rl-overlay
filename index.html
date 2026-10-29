@@ -154,6 +154,16 @@
         <h2>Replays (exact, after the match)</h2>
         <p id="replay-status" class="muted"></p>
         <label class="check"><input type="checkbox" id="auto-save-replays" />Save each match's replay automatically (holds your Save Replay key during the first kickoff countdown)</label>
+        <label>
+          Replays to keep
+          <select id="replay-keep">
+            <option value="10">Last 10</option>
+            <option value="25">Last 25</option>
+            <option value="50">Last 50</option>
+            <option value="0">All</option>
+          </select>
+        </label>
+        <p class="muted">Older replays the overlay saved go to the Recycle Bin once their exact boost is read, which stays in your match history. Replays you named when saving, or chose to keep in the match report, are never touched.</p>
       </section>
 
       <div class="actions">

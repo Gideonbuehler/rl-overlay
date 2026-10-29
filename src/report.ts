@@ -13,6 +13,7 @@ import {
   type PlayerLine,
 } from "./match";
 import { arenaName, isAnonymised, playlistName, platformName, trackerCandidates, type TrackerOverride } from "./names";
+import { MIN_JUDGED, SPLITS, VERDICT_LABEL, mechanicsNotes, verdict, type MechanicsProfile, type Rate } from "./mechanics";
 import { WINDOWS, categorySource, type CategoryProfile, type SkillProfile } from "./skills";
 import { LOSS_RUN, RECENT_GAMES, WINS, changeClause, changesSentence, fmtValue, type Comparison, type Consistency } from "./consistency";
 import type { Session } from "./session";
@@ -46,6 +47,8 @@ export interface ReportOptions {
   readings: MmrReading[];
   /** Your MMR going into and out of a match, or the estimated change while "after" isn't logged (see mmrTable). */
   mmr: (r: MatchRecord) => MatchMmr;
+  /** Whether the replay cleanup may recycle this match's replay. */
+  cleanable?: (r: MatchRecord) => boolean;
   /** The estimated change still to come per playlist, from your newest match there. */
   pendingMmr?: Map<number, number>;
   /** Shared MMR for a player id, if they share it and it's been looked up. */
@@ -56,6 +59,10 @@ export interface ReportOptions {
   consistency?: Consistency;
   /** Your skill profile over the chosen window of matches (see skills.ts). */
   skills?: SkillProfile;
+  /** Your mechanics by condition over the same window (see mechanics.ts). */
+  mechanics?: MechanicsProfile;
+  /** The Skills tab's open breakdown ("mechanics"), or null for the overview. */
+  skillDetail?: string | null;
 }
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -166,10 +173,19 @@ function header(r: MatchRecord, live: boolean, o: ReportOptions): string {
         <div class="kicker">${esc(kicker)}</div>
         <div class="verdict ${tone}">${verdict}</div>
         <div class="meta">${esc(meta)}</div>
+        ${keepButton(r, o)}
       </div>
       <div class="scoreline">${team(0)}<span class="dash">–</span>${team(1)}</div>
       ${youCard(r, o)}
     </header>`;
+}
+
+/** Keeps a replay the overlay saved out of the cleanup, or lets it go again. */
+function keepButton(r: MatchRecord, o: ReportOptions): string {
+  if (!r.replay || !(r.keepReplay || o.cleanable?.(r))) return "";
+  return `<button class="keep-replay${r.keepReplay ? " on" : ""}" data-keep-replay tabindex="-1" title="${
+    r.keepReplay ? "Kept: the cleanup leaves this replay alone. Click to let it go." : "Keep this replay when older ones are cleaned up"}">${
+    r.keepReplay ? "Replay kept" : "Keep replay"}</button>`;
 }
 
 /** Your boost: exact from the replay when there is one, else the screen reader's estimate. */
@@ -1043,6 +1059,40 @@ function breakNote(o: ReportOptions): string {
 
 // ---------- skills ----------
 
+/** One cell of the mechanics table: the clean rate and what it rests on, marked where it drops. */
+function mechCell(r: Rate, drop = false): string {
+  if (!r.judged) return `<td class="num mx-cell none">–</td>`;
+  const v = verdict(r);
+  return `<td class="num mx-cell ${v}${drop ? " drop" : ""}" title="${r.clean} clean of ${r.judged}; likely ${Math.round(r.low * 100)}–${Math.round(r.high * 100)}%. ${VERDICT_LABEL[v]}.">${
+    Math.round(r.rate! * 100)}%<small>${r.judged}</small></td>`;
+}
+
+/** Your mechanics split by condition, with what's reliable and where it breaks down. */
+function mechanicsCard(m: MechanicsProfile | undefined): string {
+  const back = `<button class="sk-back" data-skill-detail="" tabindex="-1">‹ Back</button>`;
+  if (!m || !m.matches) {
+    return card("Mechanical execution", `${back}<p class="muted">Needs saved replays: turn on auto-save in settings. Each saved replay is analysed for every touch and whiff.</p>`);
+  }
+  const notes = mechanicsNotes(m);
+  const groups = SPLITS.map((s) => `<th colspan="2" class="mx-group">${s.label}</th>`).join("");
+  const sides = SPLITS.flatMap((s) => s.sides.map((side) => `<th class="num" title="${esc(side.about())}">${side.label}</th>`)).join("");
+  const rows = m.rows.filter((r) => r.all.judged).map((r) => `
+    <tr>
+      <th>${r.label}<em class="mx-verdict ${r.verdict}">${VERDICT_LABEL[r.verdict]}</em></th>
+      ${mechCell(r.all)}
+      ${r.splits.flatMap((s) => s.sides.map((side, i) => mechCell(side.rate, s.gap !== null && s.gap > 0 === (i === 1)))).join("")}
+    </tr>`).join("");
+  const pct = m.overall.rate === null ? "–" : `${Math.round(m.overall.rate * 100)}%`;
+  return card("Mechanical execution", `${back}
+    <p class="c-lead">${m.matches === m.window ? `Your last ${m.window} matches` : `${m.matches} of your last ${m.window} matches have a saved replay`}: ${m.overall.judged} attempts judged, ${pct} clean.</p>
+    ${notes.length ? `<ul class="mx-notes">${notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+    <table class="mx-table">
+      <thead><tr><th></th><th></th>${groups}</tr><tr><th></th><th class="num">Overall</th>${sides}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="foot"><b>Clean</b>: your team kept the ball, it was a shot, save, or clear, or it went well up the field. <b>Missed</b>: a whiff, or straight to an opponent. Cells show the clean rate and how many attempts it rests on (faded under ${MIN_JUDGED}); hover a heading for its range. <b>Reliable</b> means even the low end of the likely rate is 60%+, <b>occasional</b> that even the high end is under 45%, so a few lucky touches don't count as a skill. Orange marks a real drop.</p>`);
+}
+
 const SOURCE_LABEL = { measured: "Measured", estimate: "Estimate", mixed: "Partly estimated" };
 
 /** A vertex marker: filled when measured, hollow when estimated, half and half when mixed. */
@@ -1132,9 +1182,11 @@ function skillsTab(_r: MatchRecord, o: ReportOptions): string {
         <span class="sk-score">${c.now.value === null ? "–" : Math.round(c.now.value)}</span>
         <span class="sk-change">${skillChange(c)}</span>
         ${trailLine(c.trail)}
-        <div class="sk-inputs">${c.now.value === null ? `<span class="none">${c.category.empty}</span>` : parts}</div>
+        <div class="sk-inputs">${c.now.value === null ? `<span class="none">${c.category.empty}</span>` : parts}${
+          c.category.id === "mechanics" ? `<button class="sk-more" data-skill-detail="mechanics" tabindex="-1">By condition ›</button>` : ""}</div>
       </div>`;
   }).join("");
+  if (o.skillDetail === "mechanics") return `<div class="tab-grid skills">${left}${mechanicsCard(o.mechanics)}</div>`;
   const right = card("How it's made up", `${rows}
     <p class="foot">Each score is the share of players in your matches you out-did on that measure, averaged: 50 is the middle of your lobbies, 100 means you led every one. <b>Measured</b> scores come from the game's own counts or a saved replay; <b>≈ estimates</b> are worked out from touch timing and ball positions, since the game doesn't report where cars are. Hover an item for what it stands for.</p>`);
   return `<div class="tab-grid skills">${left}${right}</div>`;

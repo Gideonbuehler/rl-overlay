@@ -3156,6 +3156,7 @@ version = "0.1.0"
 dependencies = [
  "boxcars",
  "dirs 6.0.0",
+ "ndarray",
  "serde",
  "serde_json",
  "subtr-actor",

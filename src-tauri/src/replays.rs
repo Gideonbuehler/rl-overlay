@@ -38,6 +38,9 @@ pub struct ReplayPlayer {
 pub struct ReplayInfo {
     path: String,
     id: String,
+    /// The name typed when saving it; empty for one saved without (as the
+    /// overlay's automatic saves are).
+    name: String,
     match_guid: String,
     /// As written in the header, e.g. "2026-10-24 13-31-45".
     date: String,
@@ -169,6 +172,7 @@ fn read_header(path: &Path) -> Option<ReplayInfo> {
     Some(ReplayInfo {
         path: path.to_string_lossy().into_owned(),
         id: prop_str(p, "Id"),
+        name: prop_str(p, "ReplayName"),
         match_guid: prop_str(p, "MatchGUID"),
         date: prop_str(p, "Date"),
         map: prop_str(p, "MapName"),
@@ -191,6 +195,38 @@ fn read_header(path: &Path) -> Option<ReplayInfo> {
 #[tauri::command]
 pub fn list_replays() -> Vec<ReplayInfo> {
     scan()
+}
+
+/// Sends replays to the Recycle Bin, so they can still be restored. Only ever
+/// `.replay` files directly inside the game's replay folders; returns the
+/// paths that went.
+#[tauri::command]
+pub fn recycle_replays(paths: Vec<String>) -> Vec<String> {
+    let folders: Vec<PathBuf> = demo_dirs().iter().filter_map(|d| std::fs::canonicalize(d).ok()).collect();
+    paths
+        .into_iter()
+        .filter(|p| {
+            let path = Path::new(p);
+            let in_folder = path.parent().and_then(|d| std::fs::canonicalize(d).ok()).is_some_and(|d| folders.contains(&d));
+            in_folder && path.extension().and_then(|e| e.to_str()) == Some("replay") && path.is_file() && recycle(path)
+        })
+        .collect()
+}
+
+fn recycle(path: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE, SHFILEOPSTRUCTW};
+    // The list of paths ends with an extra null.
+    let from: Vec<u16> = path.as_os_str().encode_wide().chain([0, 0]).collect();
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: PCWSTR(from.as_ptr()),
+        fFlags: (FOF_ALLOWUNDO.0 | FOF_NOCONFIRMATION.0 | FOF_NOERRORUI.0 | FOF_SILENT.0) as u16,
+        ..Default::default()
+    };
+    let ok = unsafe { SHFileOperationW(&mut op) } == 0;
+    ok && !op.fAnyOperationsAborted.as_bool() && !path.exists()
 }
 
 /// Watches the replay folders and emits `replays` whenever the list changes.
@@ -303,5 +339,26 @@ pub fn replay_test(path: &str) {
             }
         }
         Err(e) => println!("boost: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recycles_only_replays_in_the_game_folders() {
+        let dir = std::env::temp_dir().join(format!("rlo-recycle-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let stray = dir.join("rl-overlay-recycle-test.replay");
+        std::fs::write(&stray, b"not a replay").unwrap();
+        let path = stray.to_string_lossy().into_owned();
+        // Outside the game's replay folders: refused, and left where it is.
+        assert!(recycle_replays(vec![path.clone()]).is_empty());
+        assert!(stray.exists());
+        // The Recycle Bin call itself works (this file lands in the Recycle Bin).
+        assert!(recycle(&stray));
+        assert!(!stray.exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

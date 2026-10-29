@@ -175,8 +175,8 @@ against the other team.
 
 | Category | Made up of | Source |
 |---|---|---|
-| Mechanics & recoveries | aerial touches / min, average hit speed, hard hits / min; your team's time to win the ball back | measured; the last is an estimate |
-| Positioning & rotations | how close your share of team touches is to an even split; team possession | estimates |
+| Mechanical execution | how reliably your attempts come off: overall, under pressure, at speed, in the air, and at awkward angles (from saved replays; see below) | estimates |
+| Positioning & rotations | how close your share of team touches is to an even split; team possession; your team's time to win the ball back | estimates |
 | Challenge selection | 50/50s won, 50/50s lost in your own third | estimates |
 | Boost efficiency | time on empty, boost used while already supersonic (from saved replays) | measured |
 | Shooting accuracy | goals per shot | measured |
@@ -189,7 +189,45 @@ item's tooltip says what it stands in for. On the radar, measured categories hav
 points, estimated ones hollow points, and mixed ones half-filled. Each category also
 shows how it moved against the window before (only when the change is bigger than
 match-to-match variation, with at least 5 matches on each side) and a line of its score
-over the window. Boost efficiency needs saved replays (auto-save in settings).
+over the window. Boost efficiency and mechanical execution need saved replays (auto-save
+in settings).
+
+#### Mechanical execution
+
+Counting aerials or hard hits rewards volume: one flashy aerial among five whiffs counted
+the same as one clean one. Mechanics now come from the replay, which has every car and the
+ball frame by frame (`src-tauri/src/mechanics.rs`, using subtr-actor's touch and whiff
+detection). Every touch and every whiff (a committed attempt that missed the ball; ones the
+detector is less than 70% sure of are left out) is recorded with the conditions it
+happened in:
+
+- **Kind:** ground, wall, low air, or high air, and whether you dodged into it.
+- **Car speed** just before contact.
+- **Approach angle:** degrees between where the car was heading and the ball.
+- **Time available:** how long the nearest opponent needed to reach the ball, from their
+  distance and how fast they were closing on it.
+
+A touch is **clean** when it did something useful: your team touched the ball next or
+scored, it was a shot, save, or clear, or it moved the ball well up the field. It's
+**missed** when the ball went straight to an opponent (within 1.5 s), and whiffs are
+always missed. Anything else is left unjudged, as are kickoff touches. Being beaten to the
+ball isn't counted as a mechanical miss.
+
+Rates resting on a few attempts are uncertain, so reliability is the low end of the rate's
+95% range (a Wilson interval): 3 clean of 3 can't outrank 18 of 22. That's what the radar
+compares against the rest of each lobby. **By condition** on the Mechanics row opens a
+table of each kind (ground, wall, low aerials, high aerials, dodging into it) split by slow
+or fast, straight or angled, and plenty of time or rushed, with a verdict: **Reliable** when
+even the low end of the likely rate is 60% or more, **Occasional** when even the high end is
+under 45% (it comes off now and then, not reliably), otherwise usually works or hit or miss,
+and too few to tell under 8 attempts. Where a kind drops between two conditions by more
+than chance (95%) and at least 15 points, the cell is marked and a line says so, e.g.
+"Ground touches: 62% clean when rushed (of 13), against 100% with time to set up."
+
+Each replay takes a few seconds to analyse, one at a time (all cores at once crashes this
+machine), and the result is cached and kept in the match history, so it survives the
+replay cleanup, which waits for it. `rl-overlay --mechanics-test <file.replay>` prints what
+the analysis finds.
 
 ## Replays: exact boost and watching goals
 
@@ -214,6 +252,15 @@ while Rocket League is the window in front. Held mid-match, the key marks the re
 itself when the match ends, so leaving the end screen straight away still keeps it. If the
 game wasn't in front, the next kickoff tries again, then full time. Rocket League keeps
 Match History replays in memory only, so there's no file for the overlay to pick up later.
+
+**Replays to keep** (same settings section, last 10 by default) sends older replays the
+overlay saved to the Recycle Bin, once their exact boost has been read, which stays in the
+match history; only watching those goals is lost. A replay counts as the overlay's when
+it pressed Save for that match and the replay has no name: replays you save yourself get
+the name you type, and those are never touched, nor are ones marked **Keep replay** in a
+match report. Matches saved before the overlay kept track of its own saves count when
+their replay has no name. Only `.replay` files directly in the game's replay folders can
+be recycled.
 
 While a replay plays, its events are kept out of match tracking and the session.
 Matches without a match GUID (offline, some private matches) can't be linked.
@@ -318,16 +365,25 @@ every digit is usually learned within a match. If you change resolution or HUD s
 use **Relearn digits**. Learned shapes are saved in the app's data folder.
 
 The reader skips frames where OCR and the learned shapes disagree, leaves look-alike
-digits unread rather than guessing, and the overlay takes the median of the last
-three readings, so one-frame misreads don't count as boost used or collected.
+digits unread rather than guessing, and the overlay drops any reading that jumps away
+from the one before and straight back at the next, so one-frame misreads don't count as
+boost used or collected. (It used to take the median of the last three readings, which
+also blurred real steps, such as a pad picked up while boosting.)
 Settings > Boost and replays can log every reading to `boost-log.csv` in the app's
 data folder for checking.
 
 From the readings it tracks boost used, collected, boost per minute, average boost,
 and time spent at 0 and at 100. Kickoffs and respawns after a demo reset the meter
 without counting as boost collected, and readings the game couldn't produce (a
-jump of 36 in a tenth of a second) need a second matching reading first. When you
-spectate or watch a replay, the API's exact boost values are used instead.
+jump of 36 in a tenth of a second) need a second matching reading first. A small pad
+always gives exactly 12, so a rise that falls short of whole pads (+9) means you were
+boosting as you picked it up: the 3 burned counts as used, and the full 12 as collected.
+When you spectate or watch a replay, the API's exact boost values are used instead.
+
+Checked against the exact numbers in saved replays, the old counting came out about 14%
+low on average (never high). Fed the replays' own boost traces at the reader's 10
+readings a second, with or without 2% misreads mixed in, the new counting lands within
+about 5% of the exact figure.
 
 Tuning without the game:
 `src-tauri/target/debug/rl-overlay.exe --ocr-test <image> <x> <y> <w> <h> [...]`
@@ -394,9 +450,11 @@ src/names.ts      playlist, arena, and platform names
 src/session.ts    session (worked out from the archive), settings, saved data
 src/consistency.ts  trends in your own play across games and sessions
 src/skills.ts     skill radar scores, each against the rest of the lobby
-src/*.test.ts     Vitest tests (session, match tracking, consistency, skills, HUD, hotkeys, MMR)
+src/*.test.ts     Vitest tests (session, match tracking, consistency, skills, mechanics, HUD, hotkeys, MMR, boost, replay cleanup)
 src/hud.ts        compact HUD and its stat catalogue
 src/boost.ts      boost used/collected from readings
+src/cleanup.ts    which saved replays the cleanup may recycle
+src/mechanics.ts  mechanical execution by condition, and how reliable it is
 src/mmr.ts        your MMR history and the shared MMR client
 src/main.ts       match flow, show/hide logic, calibration, settings panel
 src/style.css     overlay styles: a Cyberpunk-style neon look, colours and shapes as tokens at the top
@@ -408,6 +466,7 @@ src-tauri/src/autorun.rs  start with Windows, open and close with the game
 src-tauri/src/gamerun.rs  game launches (5-minute grace), for sessions
 src-tauri/src/focus.rs    click zones (Ctrl), foreground tracking, focus hand-back
 src-tauri/src/replays.rs  finds saved replays, reads goal frames, exact boost via subtr-actor
+src-tauri/src/mechanics.rs  every touch and whiff from a replay, with speed, angle, time available
 src-tauri/src/setup.rs    first-run setup: finds the game, turns the Stats API on
 src-tauri/src/update.rs   installs new releases from GitHub, once the game is closed
 .github/workflows/  Release (every push to main) and Check (other branches)

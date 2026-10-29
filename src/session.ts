@@ -112,6 +112,11 @@ export interface Settings {
   shareToken: string;
   /** Hold the game's Save Replay key after each match. Off by default. */
   autoSaveReplays: boolean;
+  /**
+   * How many of the replays the overlay saved to keep, newest first; older ones
+   * go to the Recycle Bin once their exact boost is read. 0 keeps them all.
+   */
+  replayKeep: number;
   /** The first-run setup has been shown (or wasn't needed). */
   setupDone: boolean;
 }
@@ -376,6 +381,7 @@ export const loadSettings = () =>
     serverUrl: "",
     shareToken: "",
     autoSaveReplays: false,
+    replayKeep: 10,
     setupDone: false,
   });
 export const saveSettings = (s: Settings) => write(SETTINGS_KEY, s);

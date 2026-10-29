@@ -5,9 +5,11 @@
 // Some inputs are counted by the game (goals, shots, saves, touches, hit
 // speeds) or read exactly from a saved replay (boost), and are "measured".
 // Others are inferred from touch timing and ball positions, because the Stats
-// API never says where cars are, and are "estimates".
+// API never says where cars are, or judged from a replay (whether a touch
+// came off), and are "estimates".
 
 import { duration, type MatchRecord, type PlayerLine } from "./match";
+import { reliability, type MechAttempt } from "./mechanics";
 import { countsForSession, matchEnd } from "./session";
 
 export type Source = "measured" | "estimate";
@@ -40,23 +42,29 @@ const ratio = (part: number | undefined, whole: number | undefined, min = 1) =>
   whole !== undefined && part !== undefined && whole >= min ? part / whole : null;
 const exactBoost = (r: MatchRecord, p: PlayerLine) => r.replayBoost?.find((b) => b.name === p.name && b.time > 0) ?? null;
 const teamOf = (r: MatchRecord, team: number) => Object.values(r.players).filter((p) => p.team === team);
+/** How reliably a player's attempts in a match came off (see mechanics.ts), optionally under one condition. */
+const execution = (filter?: (a: MechAttempt) => boolean) => (r: MatchRecord, p: PlayerLine) => reliability(r.mechanics?.[p.name], filter);
+const RELIABILITY_NOTE = "Scored by the low end of the likely range, so a few lucky touches can't outrank many that reliably come off.";
 
 export const CATEGORIES: SkillCategory[] = [
   {
-    id: "mechanics", label: "Mechanics & recoveries", short: "Mechanics", empty: "No matches yet.",
+    id: "mechanics", label: "Mechanical execution", short: "Mechanics", empty: "Needs saved replays: turn on auto-save in settings.",
     inputs: [
-      { id: "aerials", label: "Aerial touches / min", source: "measured", higherIsBetter: true,
-        about: "Touches with the ball well off the ground.",
-        player: (_r, p, min) => p.aerials / min },
-      { id: "hitSpeed", label: "Avg hit speed", source: "measured", higherIsBetter: true,
-        about: "Average speed the ball leaves your car.",
-        player: (_r, p) => ratio(p.hitSum, p.hits) },
-      { id: "hardHits", label: "Hard hits / min", source: "measured", higherIsBetter: true,
-        about: "Hits that send the ball off at 100 km/h or more.",
-        player: (_r, p, min) => p.hardHits / min },
-      { id: "recovery", label: "Winning it back", source: "estimate", higherIsBetter: false,
-        about: "Your team's average time to touch the ball again after losing it. Stands in for recoveries, which the game doesn't report.",
-        team: (r, t) => ratio(r.regain?.time[t], r.regain?.count[t], 3) },
+      { id: "clean", label: "Clean execution", source: "estimate", higherIsBetter: true,
+        about: `Touches that did something useful (your team kept it, a shot, save, or clear, or the ball moved well up the field), out of every attempt including whiffs. From the saved replay. ${RELIABILITY_NOTE}`,
+        player: execution() },
+      { id: "pressure", label: "Under pressure", source: "estimate", higherIsBetter: true,
+        about: `The same, for attempts with an opponent under a second from the ball. ${RELIABILITY_NOTE}`,
+        player: execution((a) => a[4] >= 0 && a[4] < 10) },
+      { id: "atSpeed", label: "At speed", source: "estimate", higherIsBetter: true,
+        about: `The same, for attempts at 70 km/h or more. ${RELIABILITY_NOTE}`,
+        player: execution((a) => a[2] >= 70) },
+      { id: "inAir", label: "In the air", source: "estimate", higherIsBetter: true,
+        about: `The same, for aerial attempts, low and high. ${RELIABILITY_NOTE}`,
+        player: execution((a) => a[0] === "a" || a[0] === "h") },
+      { id: "angles", label: "Awkward angles", source: "estimate", higherIsBetter: true,
+        about: `The same, for attempts coming in more than 45° off a straight line at the ball. ${RELIABILITY_NOTE}`,
+        player: execution((a) => a[3] > 45) },
     ],
   },
   {
@@ -72,6 +80,9 @@ export const CATEGORIES: SkillCategory[] = [
       { id: "possession", label: "Possession", source: "estimate", higherIsBetter: true,
         about: "Share of live play your team touched the ball last.",
         team: (r, t) => ratio(r.possession[t], r.possession[0] + r.possession[1], 10) },
+      { id: "recovery", label: "Winning it back", source: "estimate", higherIsBetter: false,
+        about: "Your team's average time to touch the ball again after losing it.",
+        team: (r, t) => ratio(r.regain?.time[t], r.regain?.count[t], 3) },
     ],
   },
   {

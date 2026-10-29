@@ -178,6 +178,27 @@ small {
   margin-top: var(--space-1);
   color: var(--text-dim);
 }
+/* Keeps a replay the overlay saved out of the cleanup */
+.keep-replay {
+  margin-top: var(--space-2);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--line-strong);
+  clip-path: var(--chamfer-sm);
+  background: transparent;
+  font: 600 var(--fs-2xs) var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+.keep-replay:hover {
+  border-color: var(--cyan);
+  color: var(--text);
+}
+.keep-replay.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .scoreline {
   display: flex;
@@ -2254,6 +2275,103 @@ button.break-note:hover {
 }
 .sk-inputs .none {
   opacity: 0.7;
+}
+
+/* Skills: the mechanics breakdown by condition */
+.sk-more,
+.sk-back {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 var(--fs-2xs) var(--font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  cursor: pointer;
+}
+.sk-more {
+  margin-left: auto;
+}
+.sk-back {
+  display: block;
+  margin: 0 0 var(--space-2);
+}
+.sk-more:hover,
+.sk-back:hover {
+  color: var(--text);
+}
+.mx-notes {
+  margin: 0 0 var(--space-3);
+  padding: 0 0 0 var(--space-4);
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.mx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.mx-table th,
+.mx-table td {
+  padding: var(--space-1) 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.mx-table tbody th {
+  white-space: normal;
+}
+.mx-table thead th {
+  font-size: var(--fs-2xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mx-table .mx-group {
+  text-align: center;
+  border-bottom-color: var(--line-strong);
+}
+.mx-table .num {
+  text-align: right;
+}
+.mx-table tbody th {
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.mx-verdict {
+  display: block;
+  font-size: var(--fs-2xs);
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mx-cell {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.mx-cell small {
+  margin-left: var(--space-1);
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+.mx-verdict.reliable,
+.mx-cell.reliable {
+  color: var(--cyan);
+}
+.mx-verdict.occasional,
+.mx-cell.occasional {
+  color: var(--loss);
+}
+.mx-cell.few,
+.mx-cell.none {
+  opacity: 0.45;
+}
+.mx-cell.drop {
+  background: color-mix(in srgb, var(--boost) 16%, transparent);
+  box-shadow: inset 0 -2px 0 var(--boost);
 }
 
 /* Estimated MMR (≈), until the next queue logs the real number */
