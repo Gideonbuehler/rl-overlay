@@ -66,7 +66,7 @@ export function latestReading(readings: MmrReading[], playlist?: number): MmrRea
  * the difference would then cover more than this match. `matches` is the rest
  * of your history, to check that against.
  */
-export function matchMmr(readings: MmrReading[], r: MatchRecord, matches: MatchRecord[] = []): { before?: number; after?: number } {
+export function matchMmr(readings: MmrReading[], r: MatchRecord, matches: MatchRecord[] = []): MatchMmr {
   if (r.playlistId === undefined) return {};
   const local = logIsLocal(readings);
   const start = r.startedAt;
@@ -82,6 +82,91 @@ export function matchMmr(readings: MmrReading[], r: MatchRecord, matches: MatchR
   const before = [...same].reverse().find((x) => at(x) <= start && at(x) > prevStart);
   const after = same.find((x) => at(x) > start && at(x) < nextStart);
   return { before: before?.mmr, after: after?.mmr };
+}
+
+/** A match's MMR going in and coming out, or a guess at the change while "after" isn't logged yet. */
+export interface MatchMmr {
+  before?: number;
+  after?: number;
+  /**
+   * The likely change for your newest match in a playlist, until your next
+   * queue in that playlist logs the real "after": your usual change for a win
+   * (or a loss) there.
+   */
+  estimate?: number;
+}
+
+/** What a win or a loss moves MMR by once a season has settled, for when your history has no examples. */
+export const DEFAULT_CHANGE = 9;
+/** Examples needed to go by your own history, and how many recent ones count. */
+const MIN_EXAMPLES = 3;
+const RECENT_EXAMPLES = 10;
+
+/** A finished match's change, for working out the usual one. */
+export interface KnownChange {
+  playlist: number;
+  won: boolean;
+  change: number;
+}
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
+};
+
+/**
+ * How much a win (or a loss) usually moves your MMR: the median of your
+ * latest ones in the playlist, else in any playlist, else DEFAULT_CHANGE.
+ * `known` is newest first. Changes shrink as a season settles, hence recent ones.
+ */
+export function usualChange(known: KnownChange[], playlist: number, won: boolean): number {
+  const sized = (f: (k: KnownChange) => boolean) => known.filter((k) => k.won === won && f(k)).slice(0, RECENT_EXAMPLES).map((k) => Math.abs(k.change));
+  for (const xs of [sized((k) => k.playlist === playlist), sized(() => true)]) {
+    if (xs.length >= MIN_EXAMPLES) return Math.round(median(xs));
+  }
+  return DEFAULT_CHANGE;
+}
+
+/** Win or loss (leaving counts as a loss), or null when there's no result. */
+const resultOf = (r: MatchRecord): boolean | null =>
+  r.myTeam === null ? null : r.leftEarly ? false : r.winner === null ? null : r.winner === r.myTeam;
+
+/**
+ * Every match's MMR (`matches` newest first), with an estimate for the newest
+ * match in each playlist whose next queue hasn't come yet. Worked out once
+ * per change to the readings or the history, since the report asks per row.
+ */
+export function mmrTable(readings: MmrReading[], matches: MatchRecord[]): Map<MatchRecord, MatchMmr> {
+  const table = new Map<MatchRecord, MatchMmr>();
+  const known: KnownChange[] = [];
+  for (const r of matches) {
+    const m: MatchMmr = matchMmr(readings, r, matches);
+    table.set(r, m);
+    const won = resultOf(r);
+    if (m.before !== undefined && m.after !== undefined && won !== null && r.playlistId !== undefined) {
+      known.push({ playlist: r.playlistId, won, change: m.after - m.before });
+    }
+  }
+  const seen = new Set<number>();
+  for (const r of matches) {
+    if (r.playlistId === undefined || seen.has(r.playlistId)) continue;
+    seen.add(r.playlistId);
+    const m = table.get(r)!;
+    const won = resultOf(r);
+    if (m.before !== undefined && m.after === undefined && won !== null) {
+      m.estimate = (won ? 1 : -1) * usualChange(known, r.playlistId, won);
+    }
+  }
+  return table;
+}
+
+/** The estimated change still to come in each playlist (see MatchMmr.estimate), with the match it's for. */
+export function pendingChanges(table: Map<MatchRecord, MatchMmr>): Map<number, { change: number; match: MatchRecord }> {
+  const out = new Map<number, { change: number; match: MatchRecord }>();
+  table.forEach((m, r) => {
+    if (m.estimate !== undefined && r.playlistId !== undefined) out.set(r.playlistId, { change: m.estimate, match: r });
+  });
+  return out;
 }
 
 /** MMR at the first and latest queue since `since`, per playlist, in first-played order. */

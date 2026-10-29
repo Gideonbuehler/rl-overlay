@@ -219,7 +219,9 @@ Each time you queue, Rocket League writes the party leader's rating for that pla
 to its log (`Documents\My Games\Rocket League\TAGame\Logs\Launch.log`). The overlay
 reads it (MMR = value × 20 + 100; matches RL Tracker within a game or two) when you
 queue solo or lead the party (member 0, whoever made it; your id comes from the sign-in
-line); in someone else's party the value is theirs, so it's skipped. The game's backup
+line); in someone else's party the value is theirs, so it's skipped. Queueing several
+playlists at once logs an average of them, so those queues are skipped too: queue one
+playlist at a time to have your MMR tracked. The game's backup
 logs are read at startup too, so earlier games today are filled in. The log's queue
 times can be UTC or your PC's local time; the overlay tells which from the first queue
 it sees as the game writes it (until then it assumes UTC), and lines readings up with
@@ -230,9 +232,17 @@ match's change is known once you queue again. If you play two matches without qu
 between (staying in the lobby), neither gets a change rather than one getting both. The
 overlay shows MMR next to your name in the report, the change per match there and in All
 matches, the session's change per playlist in the report's top bar (first queue of the
-session to the latest), and HUD stats for MMR, Last game MMR, and Session MMR. The last
-match of a session has no change until your next queue; the report shows "MMR going in"
-until then. Last game MMR skips matches with no MMR (private matches, training).
+session to the latest), and HUD stats for MMR, Last game MMR, and Session MMR. Last game
+MMR skips matches with no MMR (private matches, training).
+
+The game doesn't log MMR after a match (the post-match scoreboard's MMR, if you've turned it
+on in the game, isn't written anywhere the overlay can read). So until your next queue in
+that playlist, your newest match shows an **estimate marked ≈**: your MMR going in plus
+your usual change for a win (or minus your usual change for a loss), taken as the median of
+your last 10 logged wins or losses in that playlist (any playlist when there are fewer than
+3, else 9). The match card, All matches, the session's change, and the HUD all show the ≈
+value; when you queue again the real number replaces it. Mid-match the card shows "MMR
+going in".
 
 Saved matches need some play seen (a clock, a touch, or a goal). The end screen keeps
 sending state with a winner after a match, which used to be saved as an extra "match"
