@@ -145,6 +145,68 @@ describe("MatchTracker", () => {
     });
   });
 
+  describe("first to ball", () => {
+    const SQUAD = [
+      { Name: "Me", TeamNum: 0 },
+      { Name: "Mate", TeamNum: 0 },
+      { Name: "Them", TeamNum: 1 },
+      { Name: "Other", TeamNum: 1 },
+    ];
+
+    /** A 2v2 on a clock the test moves, with points the test sets. */
+    function squad() {
+      const t = new MatchTracker();
+      let clock = 0;
+      t.now = () => clock;
+      const scores = (at: number, points: Record<string, number>) => {
+        clock = at;
+        t.handle(state(SQUAD.map((p) => ({ ...p, Score: points[p.Name] ?? 0 }))));
+      };
+      const hit = (at: number, name: string, team: number) => {
+        clock = at;
+        t.handle(ev("BallHit", { Players: [{ Name: name, TeamNum: team }], Ball: { PostHitSpeed: 50, Location: { X: 0, Y: 0, Z: 100 } } }));
+      };
+      const kickoff = () => {
+        t.handle(ev("CountdownBegin"));
+        t.handle(ev("RoundStarted"));
+      };
+      const firsts = () => Object.fromEntries(Object.values(t.record.players).map((p) => [p.name, p.firstTouches]));
+      t.handle(ev("MatchCreated"));
+      scores(0, {});
+      return { t, scores, hit, kickoff, firsts };
+    }
+
+    it("follows the server's award when your game saw someone else touch first", () => {
+      const { t, scores, hit, kickoff, firsts } = squad();
+      kickoff();
+      // Your game sees your touch first; the server paid your teammate.
+      hit(0, "Me", 0);
+      hit(60, "Mate", 0);
+      expect(firsts()).toMatchObject({ Me: 1, Mate: 0 });
+      scores(500, { Mate: 2 });
+      expect(firsts()).toMatchObject({ Me: 0, Mate: 1 });
+      expect(t.record.firstTouches).toEqual([1, 0]);
+
+      // Across teams too, and a later +2 doesn't move it again.
+      kickoff();
+      hit(10_000, "Them", 1);
+      scores(10_400, { Mate: 2, Me: 2 });
+      scores(10_900, { Mate: 2, Me: 2, Them: 2 });
+      expect(firsts()).toMatchObject({ Me: 1, Mate: 1, Them: 0 });
+      expect(t.record.firstTouches).toEqual([2, 0]);
+    });
+
+    it("keeps your game's view when no award turns up in time", () => {
+      const { t, scores, hit, kickoff, firsts } = squad();
+      kickoff();
+      hit(0, "Other", 1);
+      scores(1_600, {});
+      scores(1_700, { Me: 2 }); // too late: a touch later in the play
+      expect(firsts()).toMatchObject({ Other: 1, Me: 0 });
+      expect(t.record.firstTouches).toEqual([0, 1]);
+    });
+  });
+
   it("starts a fresh record when a new match GUID shows up", () => {
     const t = kickedOff();
     t.handle(goal("Me", 0));

@@ -26,7 +26,7 @@ export interface PlayerLine {
   demoed: number;
   /** Touches with the ball well off the ground. */
   aerials: number;
-  /** Rounds where this player touched the ball first after kickoff. */
+  /** Rounds where this player touched the ball first after kickoff, as the server awarded it (see FIRST_TOUCH_POINTS). */
   firstTouches: number;
   /** Touches per third of the field, from this player's point of view: [defence, middle, attack]. */
   thirds: [number, number, number];
@@ -172,6 +172,17 @@ const AERIAL_Z = 300;
 const THIRD_Y = 5120 / 3;
 /** Touches by both teams this close together (ms) are a 50/50 challenge. */
 export const CHALLENGE_MS = 500;
+/**
+ * The server pays exactly one player these points for each kickoff's first
+ * touch, a fraction of a second after it (checked against saved replays). Each
+ * game sees its own car a little ahead of everyone else's, so when two players
+ * touch almost together, the BallHit events can name a different first toucher
+ * in each player's game; the server's award is the same for everyone, so it
+ * overrides them.
+ */
+const FIRST_TOUCH_POINTS = 2;
+/** How long after the first touch the award is waited for; replays show it within a second. */
+const FIRST_TOUCH_AWARD_MS = 1500;
 /** A longer wait for the ball counts as this long (ms), so one long spell doesn't swamp a match. */
 const REGAIN_CAP_MS = 15_000;
 const HIT_LIMIT = 800;
@@ -252,6 +263,17 @@ export class MatchTracker {
   private roundActive = false;
   private inReplay = false;
   private awaitingFirstTouch = false;
+  /**
+   * This round's first touch: everyone's points at the countdown (to spot the
+   * server's award), when the first touch came, who it was credited to, and
+   * whether the server's award has settled it.
+   */
+  private kickoff: {
+    scores: Map<string, number>;
+    at: number | null;
+    credited: { name: string; team: number | undefined } | null;
+    settled: boolean;
+  } | null = null;
   /** One goal per kickoff: the game sends a second, empty GoalScored per goal. */
   private goalThisRound = false;
   private roundStartedAt = 0;
@@ -285,6 +307,12 @@ export class MatchTracker {
       case "CountdownBegin":
         this.roundActive = false;
         this.awaitingFirstTouch = true;
+        this.kickoff = {
+          scores: new Map(Object.values(r.players).map((p) => [p.name, p.points])),
+          at: null,
+          credited: null,
+          settled: false,
+        };
         this.goalThisRound = false;
         this.clearPossession();
         return false;
@@ -397,6 +425,7 @@ export class MatchTracker {
     this.roundActive = false;
     this.inReplay = false;
     this.awaitingFirstTouch = false;
+    this.kickoff = null;
     this.roundStartedAt = 0;
     this.lastTick = 0;
     this.sawStart = false;
@@ -412,9 +441,14 @@ export class MatchTracker {
     const refs = (data.Players ?? []) as PlayerRef[];
 
     if (this.awaitingFirstTouch && refs[0]) {
+      // Your game's view of who got there first, until the server's award says otherwise.
       this.awaitingFirstTouch = false;
-      this.player(refs[0]).firstTouches++;
-      if (refs[0].TeamNum === 0 || refs[0].TeamNum === 1) r.firstTouches[refs[0].TeamNum]++;
+      this.player(refs[0]);
+      this.creditFirstTouch(refs[0].Name, refs[0].TeamNum, 1);
+      if (this.kickoff) {
+        this.kickoff.at = this.now();
+        this.kickoff.credited = { name: refs[0].Name, team: refs[0].TeamNum };
+      }
     }
 
     for (const ref of refs) {
@@ -546,6 +580,7 @@ export class MatchTracker {
       line.bumps = p.CarTouches ?? line.bumps;
       line.demos = p.Demos ?? line.demos;
     }
+    this.checkFirstTouchAward(data.Players ?? []);
 
     const me = this.findMe(data.Players ?? [], game);
     if (me) {
@@ -569,6 +604,30 @@ export class MatchTracker {
       r.ballSpeedSum += speed * dt;
       r.ballTop = Math.max(r.ballTop, speed);
     }
+  }
+
+  private creditFirstTouch(name: string, team: number | undefined, change: 1 | -1) {
+    const p = this.record.players[name];
+    if (p) p.firstTouches += change;
+    if (team === 0 || team === 1) this.record.firstTouches[team] += change;
+  }
+
+  /** Moves the round's first touch to whoever the server paid for it, if that's someone else. */
+  private checkFirstTouchAward(players: any[]) {
+    const k = this.kickoff;
+    if (!k || k.settled) return;
+    if (k.at !== null && this.now() - k.at > FIRST_TOUCH_AWARD_MS) {
+      k.settled = true; // no award seen; keep your game's view
+      return;
+    }
+    const paid = players.find((p) => k.scores.has(p.Name) && p.Score - k.scores.get(p.Name)! === FIRST_TOUCH_POINTS);
+    if (!paid) return;
+    k.settled = true;
+    this.awaitingFirstTouch = false;
+    if (k.credited?.name === paid.Name) return;
+    if (k.credited) this.creditFirstTouch(k.credited.name, k.credited.team, -1);
+    this.player(paid);
+    this.creditFirstTouch(paid.Name, paid.TeamNum, 1);
   }
 
   private findMe(players: any[], game: any) {

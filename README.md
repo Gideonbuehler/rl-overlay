@@ -120,6 +120,12 @@ Only things the in-game scoreboard doesn't: no score, goals, assists, saves, or 
 - **Goals:** clock, scorer, assist, ball speed, how long the play took from kickoff.
 - **Head to head:** possession, touches in attack, touches, aerials, kickoffs won,
   hit speed, hard hits, bumps, demos, crossbars, ball speed.
+- **First to ball:** the player who touches the ball first after each kickoff, as the
+  server decides it. Each game sees its own car slightly ahead of everyone else's, so when
+  two players touch almost together, the game's BallHit events can name a different first
+  toucher in each player's game. The server pays exactly one player 2 points for each
+  kickoff's first touch, within a second (checked against saved replays), and every
+  player's score comes through the Stats API, so that award overrides the touch events.
 
 Session W/L sits at the top right; the session and archive are kept between launches.
 

@@ -176,6 +176,8 @@ function kickoff() {
     send("RoundStarted", { MatchGuid: match.guid });
     const p = pick(match.players);
     p.Touches++;
+    // The server pays the first touch a moment later, as the real game does.
+    setTimeout(() => (p.Score += 2), 400);
     send("BallHit", { MatchGuid: match.guid, Players: [ref(p)], Ball: { PreHitSpeed: 0, PostHitSpeed: rand(55, 90), Location: { X: 0, Y: 0, Z: 93 } } });
   }, 3000);
 }
